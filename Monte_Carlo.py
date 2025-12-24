@@ -53,11 +53,14 @@ def calculate_statistics(data):
         dict with mean, std, and starting_price
     """
     # Calculate daily returns
-    data['Daily Return'] = (data['Close'] - data['Close'].shift(1)) / data['Close'].shift(1)
+    data['Log Return'] = np.log(data['Close'] / data['Close'].shift(1))
+    mu = data['Log Return'].mean()
+    sigma = data['Log Return'].std()
+
     
     # Get statistics
-    mean = data['Daily Return'].mean()
-    std = data['Daily Return'].std()
+    mean = mu
+    std = sigma
     starting_price = float(data['Close'].iloc[-1])
     
     return {
@@ -70,30 +73,20 @@ def calculate_statistics(data):
 # SIMULATION FUNCTIONS
 
 
-def run_monte_carlo(starting_price, mean, std, num_days, num_simulations):
-    """
-    Run Monte Carlo simulation
+def run_monte_carlo(starting_price, mu, sigma, num_days, num_simulations):
+    dt = 1  # one trading day
+    random_shocks = np.random.normal(0, 1, (num_simulations, num_days))
     
-    Args:
-        starting_price: Current stock price
-        mean: Average daily return
-        std: Daily volatility
-        num_days: Number of days to simulate
-        num_simulations: Number of simulation paths
-    
-    Returns:
-        2D numpy array of simulations (num_simulations x num_days)
-    """
-    simulations = np.zeros((num_simulations, num_days))
-    
-    for i in range(num_simulations):
-        price = starting_price
-        for j in range(num_days):
-            daily_return = np.random.normal(mean, std)
-            price = price * (1 + daily_return)
-            simulations[i][j] = price
-    
-    return simulations
+    price_paths = np.zeros_like(random_shocks)
+    price_paths[:, 0] = starting_price
+
+    for t in range(1, num_days):
+        price_paths[:, t] = price_paths[:, t-1] * np.exp(
+            (mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * random_shocks[:, t]
+        )
+
+    return price_paths
+
 
 
 # ANALYSIS FUNCTIONS
@@ -128,18 +121,20 @@ def calculate_metrics(simulations, starting_price, mean, std, num_days):
     var_99_loss = starting_price - var_99_price
     
     # Sharpe Ratio
-    total_return = (mean_final_price - starting_price) / starting_price
-    annual_return = total_return * (252 / num_days)
-    annual_volatility = std * np.sqrt(252)
+    annual_return = mu * 252
+    annual_volatility = sigma * np.sqrt(252)
     sharpe_ratio = annual_return / annual_volatility if annual_volatility != 0 else 0
+
     
     # Probability of profit/loss
     prob_profit = (final_prices > starting_price).sum() / len(final_prices) * 100
-    prob_loss = (final_prices < starting_price).sum() / len(final_prices) * 100
-    
-    # Average gain/loss
-    avg_gain = np.mean(final_prices[final_prices > starting_price]) if (final_prices > starting_price).any() else 0
-    avg_loss = np.mean(final_prices[final_prices < starting_price]) if (final_prices < starting_price).any() else 0
+prob_loss = (final_prices < starting_price).sum() / len(final_prices) * 100
+
+# Average gain/loss
+returns = (final_prices - starting_price) / starting_price
+avg_gain = returns[returns > 0].mean()
+avg_loss = returns[returns < 0].mean()
+
     
     return {
         'mean_final_price': mean_final_price,
