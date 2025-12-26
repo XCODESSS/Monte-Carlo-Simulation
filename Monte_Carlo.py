@@ -50,10 +50,13 @@ def calculate_statistics(data):
         data: DataFrame with stock prices
     
     Returns:
-        dict with mean, std, and starting_price
+        mu     -> mean of log returns
+        sigma  -> std deviation of log returns
+        starting_price -> last available close price
     """
     # Calculate daily returns
     data['Log Return'] = np.log(data['Close'] / data['Close'].shift(1))
+    data.dropna(inplace = True)
     mu = data['Log Return'].mean()
     sigma = data['Log Return'].std()
 
@@ -92,19 +95,16 @@ def run_monte_carlo(starting_price, mu, sigma, num_days, num_simulations):
 # ANALYSIS FUNCTIONS
 
 
-def calculate_metrics(simulations, starting_price, mean, std, num_days):
+def calculate_metrics(
+    simulations: np.ndarray,
+    starting_price: float,
+    mu: float,
+    sigma: float,
+    num_days: int,
+) -> dict:
     """
     Calculate all risk metrics from simulation results
     
-    Args:
-        simulations: 2D array of simulation results
-        starting_price: Initial stock price
-        mean: Average daily return
-        std: Daily volatility
-        num_days: Number of days simulated
-    
-    Returns:
-        dict with all metrics
     """
     # Get final prices
     final_prices = simulations[:, -1]
@@ -115,25 +115,23 @@ def calculate_metrics(simulations, starting_price, mean, std, num_days):
     upper_bound = np.percentile(final_prices, 95)
     
     # Value at Risk
-    var_95_price = np.percentile(final_prices, 5)
-    var_95_loss = starting_price - var_95_price
-    var_99_price = np.percentile(final_prices, 1)
-    var_99_loss = starting_price - var_99_price
+    var_95_loss = max(0, starting_price - lower_bound)
+    var_99_loss = max(0, starting_price - np.percentile(final_prices, 1))
     
     # Sharpe Ratio
     annual_return = mu * 252
     annual_volatility = sigma * np.sqrt(252)
-    sharpe_ratio = annual_return / annual_volatility if annual_volatility != 0 else 0
-
+    sharpe_ratio = (
+        annual_return / annual_volatility if annual_volatility != 0 else 0
+    )
     
     # Probability of profit/loss
-    prob_profit = (final_prices > starting_price).sum() / len(final_prices) * 100
-prob_loss = (final_prices < starting_price).sum() / len(final_prices) * 100
-
-# Average gain/loss
-returns = (final_prices - starting_price) / starting_price
-avg_gain = returns[returns > 0].mean()
-avg_loss = returns[returns < 0].mean()
+    prob_profit = (final_prices > starting_price).mean() * 100
+    prob_loss = (final_prices < starting_price).mean() * 100
+# Percentage-based gains & losses
+    returns = (final_prices - starting_price) / starting_price
+    avg_gain = returns[returns > 0].mean() if (returns > 0).any() else 0
+    avg_loss = returns[returns < 0].mean() if (returns < 0).any() else 0
 
     
     return {
@@ -152,7 +150,15 @@ avg_loss = returns[returns < 0].mean()
 # VISUALIZATION FUNCTIONS
 
 
-def plot_simulation(simulations, metrics, starting_price, std, ticker, num_days, num_simulations):
+def plot_simulation(
+    simulations: np.ndarray,
+    metrics: dict,
+    starting_price: float,
+    sigma: float,
+    ticker: str,
+    num_days: int,
+    num_simulations: int,
+):
     """
     Create visualization of simulation results
     
@@ -215,7 +221,8 @@ def plot_simulation(simulations, metrics, starting_price, std, ticker, num_days,
         f"Mean Final:    ${metrics['mean_final_price']:.2f}\n"
         f"VaR (5%):     ${metrics['lower_bound']:.2f}\n"
         f"Upside (95%):  ${metrics['upper_bound']:.2f}\n"
-        f"Volatility:    {std*100:.2f}%"
+        f"Annual Volatility: {sigma * np.sqrt(252) * 100:.2f}%"
+
     )
     ax1.text(0.02, 0.02, stats_text, transform=ax1.transAxes, fontsize=11,
             verticalalignment='bottom', 
