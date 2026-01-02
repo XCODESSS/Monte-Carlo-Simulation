@@ -93,7 +93,7 @@ Monte-Carlo-Simulation/
 ├── app.py
 ├── Monte_Carlo.py
 ├── pages/
-│   └── 1_Validation.py
+│   └── Validation.py
 ├── requirements.txt
 └── README.md
 ```
@@ -201,11 +201,11 @@ Navigate between:
 
 ## Future Improvements
 
-- Time-varying volatility models
-- Fat-tailed return distributions
+- Time-varying volatility models (GARCH, stochastic volatility)
 - Portfolio-level simulations
-- Exportable reports
+- Exportable reports (PDF, Excel)
 - Model comparison tools
+- Additional distribution options (skewed distributions)
 
 ---
 
