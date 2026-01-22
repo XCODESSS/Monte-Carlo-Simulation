@@ -144,7 +144,6 @@ def run_monte_carlo(starting_price, mu, sigma, num_days, num_simulations, distri
         random_shocks = np.random.normal(0, 1, (num_simulations, num_days))
     
     # OPTIMIZED: Vectorized GBM calculation using cumulative sum
-    # This replaces the Python loop with NumPy vectorized operations
     # Formula: S(t) = S(0) * exp(sum of increments from 0 to t)
     drift = (mu - 0.5 * sigma**2) * dt
     diffusion = sigma * np.sqrt(dt) * random_shocks
@@ -178,23 +177,19 @@ def run_monte_carlo_student_t(
     """
     dt = 1
 
-    # Student-t shocks (standardized)
-    shocks = t.rvs(df, size=(num_simulations, num_days))
-    shocks = shocks / np.sqrt(df / (df - 2))  # variance normalization
 
-    # OPTIMIZED: Vectorized GBM calculation using cumulative sum
-    # This replaces the Python loop with NumPy vectorized operations
+    shocks = t.rvs(df, size=(num_simulations, num_days))
+    shocks = shocks / np.sqrt(df / (df - 2))
+
+
     drift = (mu - 0.5 * sigma**2) * dt
     diffusion = sigma * np.sqrt(dt) * shocks
-    
-    # Calculate cumulative increments (cumsum along time axis)
+
     increments = drift + diffusion
     cumulative_increments = np.cumsum(increments, axis=1)
     
-    # Apply exponential to get price paths
     price_paths = starting_price * np.exp(cumulative_increments)
     
-    # Ensure first column is starting price (handles floating point precision)
     price_paths[:, 0] = starting_price
 
     return price_paths
@@ -228,12 +223,19 @@ def calculate_metrics(
     var_95_loss = max(0, starting_price - lower_bound)
     var_99_loss = max(0, starting_price - np.percentile(final_prices, 1))
     
-    # Sharpe Ratio (assuming risk-free rate = 0)
-    annual_return = mu * 252
+    # Annualized volatility (log returns)
     annual_volatility = sigma * np.sqrt(252)
-    sharpe_ratio = (
-        annual_return / annual_volatility if annual_volatility != 0 else 0.0
+
+    # Ex-post Sharpe (simulation-based, diagnostic only)
+    total_return = (mean_final_price - starting_price) / starting_price
+    annual_return_post = total_return * (252 / num_days)
+    sharpe_ratio_post = (
+        annual_return_post / annual_volatility if annual_volatility != 0 else 0.0
     )
+
+    # Ex-ante Sharpe (model-implied, preferred)
+    sharpe_ratio_ante = mu / sigma if sigma != 0 else 0.0
+
     
     # Probability of profit/loss
     prob_profit = (final_prices > starting_price).mean() * 100
@@ -250,7 +252,8 @@ def calculate_metrics(
         'upper_bound': upper_bound,
         'var_95_loss': var_95_loss,
         'var_99_loss': var_99_loss,
-        'sharpe_ratio': sharpe_ratio,
+        'sharpe_ratio_post': sharpe_ratio_post,
+        'sharpe_ratio_ante': sharpe_ratio_ante,
         'prob_profit': prob_profit,
         'prob_loss': prob_loss,
         'avg_gain': avg_gain,
@@ -260,118 +263,123 @@ def calculate_metrics(
 # VISUALIZATION FUNCTIONS
 
 
-def plot_simulation(
-    simulations: np.ndarray,
-    metrics: dict,
-    starting_price: float,
-    sigma: float,
-    ticker: str,
-    num_days: int,
-    num_simulations: int,
-):
-    """
-    Create visualization of simulation results
-    
-    Args:
-        simulations: 2D array of simulation paths
-        metrics: Dictionary of calculated metrics
-        starting_price: Initial price
-        std: Daily volatility
-        ticker: Stock symbol
-        num_days: Number of days simulated
-        num_simulations: Number of simulations run
-    """
-    # Dark theme styling for seamless Streamlit integration
-    fig = plt.figure(figsize=(16, 8), facecolor='#0e1117', dpi=120)
-    gs = gridspec.GridSpec(1, 4, wspace=0.08, width_ratios=[3, 1], 
-                          left=0.05, right=0.98, top=0.95, bottom=0.1)
-    
-    # LEFT PLOT: Simulation Paths
-    ax1 = plt.subplot(gs[0, :3])
-    days_array = np.arange(1, num_days + 1)
-    
-    # Plot individual paths as faint cloud (very low alpha for clarity)
-    num_paths_to_plot = min(200, len(simulations))
-    for i in range(num_paths_to_plot):
-        ax1.plot(days_array, simulations[i], color='#4A90E2', alpha=0.05, linewidth=0.5, zorder=1)
-    
-    # Calculate percentiles for confidence interval
-    percentiles = np.percentile(simulations, [5, 50, 95], axis=0)
-    
-    # 90% Confidence Interval - distinct shaded area
-    ax1.fill_between(days_array, percentiles[0], percentiles[2], 
-                     color='#4A90E2', alpha=0.3, label='90% Confidence Interval', zorder=2)
-    
-    # Median - thick, solid line for clarity
-    ax1.plot(days_array, percentiles[1], color='#FFFFFF', linewidth=3, 
-            label='Median Projection', zorder=4, linestyle='-')
-    
-    # Starting price reference
-    ax1.axhline(y=starting_price, color='#FFD700', linestyle='--', 
-               linewidth=2, alpha=0.8, label='Start Price', zorder=3)
-    
-    # Styling
-    ax1.set_title(f"Monte Carlo Simulation: {ticker} ({num_simulations:,} runs)", 
-                 fontsize=16, fontweight='bold', pad=15, color='white')
-    ax1.set_ylabel('Stock Price ($)', fontsize=12, fontweight='bold', color='white')
-    ax1.set_xlabel('Trading Days', fontsize=12, fontweight='bold', color='white')
-    
-    # Legend with dark theme
-    legend = ax1.legend(loc='upper left', frameon=True, fancybox=True,
-                       facecolor='#1e1e1e', edgecolor='#2d2d2d', framealpha=0.95,
-                       fontsize=10, markerscale=1.2, labelcolor='white')
-    legend.get_frame().set_linewidth(1)
-    
-    # Grid and spines
-    ax1.grid(True, alpha=0.3, linestyle='-', linewidth=0.5, color='#2d2d2d')
-    ax1.set_facecolor('#0e1117')
-    ax1.spines['top'].set_visible(False)
-    ax1.spines['right'].set_visible(False)
-    ax1.spines['left'].set_color('#2d2d2d')
-    ax1.spines['bottom'].set_color('#2d2d2d')
-    ax1.margins(x=0)
-    
-    # RIGHT PLOT: Distribution
-    ax2 = plt.subplot(gs[0, 3], sharey=ax1)
-    final_prices = simulations[:, -1]
-    
-    # Histogram with dark theme
-    n, bins, patches = ax2.hist(final_prices, bins=25, orientation='horizontal', 
-                                color='#4A90E2', alpha=0.6, edgecolor='#2d2d2d', linewidth=0.5)
-    
-    # Reference lines
-    ax2.axhline(y=metrics['mean_final_price'], color='#FFFFFF', linestyle='-', 
-               linewidth=2, label='Mean', alpha=0.9)
-    ax2.axhline(y=metrics['lower_bound'], color='#E74C3C', linestyle='--', 
-               linewidth=1.5, alpha=0.8, label='5th %ile')
-    ax2.axhline(y=metrics['upper_bound'], color='#E74C3C', linestyle='--', 
-               linewidth=1.5, alpha=0.8, label='95th %ile')
-    
-    plt.setp(ax2.get_yticklabels(), visible=False)
-    ax2.set_xlabel('Frequency', fontsize=10, fontweight='bold', color='white')
-    ax2.set_title('Final Price\nDistribution', fontsize=11, fontweight='bold', pad=10, color='white')
-    ax2.grid(True, alpha=0.3, axis='x', color='#2d2d2d')
-    ax2.set_facecolor('#0e1117')
-    ax2.spines['top'].set_visible(False)
-    ax2.spines['right'].set_visible(False)
-    ax2.spines['left'].set_visible(False)
-    ax2.spines['bottom'].set_color('#2d2d2d')
-    
-    # Info box with dark theme
-    stats_text = (
-        f"Start: ${starting_price:.2f}\n"
-        f"Mean: ${metrics['mean_final_price']:.2f}\n"
-        f"Lower: ${metrics['lower_bound']:.2f}\n"
-        f"Upper: ${metrics['upper_bound']:.2f}\n"
-        f"Vol: {sigma * np.sqrt(252) * 100:.1f}%"
+def plot_simulation(simulations, metrics, starting_price, sigma, ticker, num_days, num_simulations):
+    # Bloomberg Palette
+    BG_COLOR = '#000000'
+    GRID_COLOR = '#262626'
+    TEXT_COLOR = '#FFFFFF'
+    AMBER = '#FF9900'
+    RISK_RED = '#FF3333'
+    SILVER = '#d9d9d9'   # Bloomberg silver
+
+    # Figure & Grid
+    fig = plt.figure(figsize=(16, 9), facecolor=BG_COLOR, dpi=120)
+    gs = gridspec.GridSpec(
+        1, 4,
+        width_ratios=[3, 3, 3, 1],
+        wspace=0.08
     )
-    ax1.text(0.02, 0.98, stats_text, transform=ax1.transAxes, fontsize=10,
-            verticalalignment='top', fontfamily='monospace', color='white',
-            bbox=dict(boxstyle='round,pad=0.6', fc='#1e1e1e', alpha=0.9, 
-                     ec='#2d2d2d', linewidth=1))
-    
-    plt.tight_layout(pad=1.0)
+
+    # --- MAIN PRICE PATHS ---
+    ax1 = plt.subplot(gs[0, :3])
+    ax1.set_facecolor(BG_COLOR)
+    days_array = np.arange(num_days)
+
+    # Plot faint silver paths
+    num_paths_to_plot = min(120, len(simulations))
+    for i in range(num_paths_to_plot):
+        ax1.plot(
+            days_array,
+            simulations[i],
+            color=SILVER,
+            alpha=0.03,
+            linewidth=0.7,
+            zorder=1
+        )
+
+    # Percentiles
+    percentiles = np.percentile(simulations, [5, 50, 95], axis=0)
+
+    ax1.fill_between(
+        days_array,
+        percentiles[0],
+        percentiles[2],
+        color=AMBER,
+        alpha=0.12,
+        zorder=2
+    )
+
+    ax1.plot(
+        days_array,
+        percentiles[1],
+        color=AMBER,
+        linewidth=2.5,
+        label='MEDIAN PROJECTION',
+        zorder=5
+    )
+
+    ax1.axhline(
+        y=starting_price,
+        color=TEXT_COLOR,
+        linestyle='--',
+        linewidth=0.8,
+        alpha=0.4,
+        zorder=3
+    )
+
+    # --- DISTRIBUTION ---
+    ax2 = plt.subplot(gs[0, 3])
+    ax2.set_facecolor(BG_COLOR)
+    final_prices = simulations[:, -1]
+
+    n, bins, patches = ax2.hist(
+        final_prices,
+        bins=45,
+        orientation='horizontal',
+        color=AMBER,
+        alpha=0.7,
+        edgecolor=BG_COLOR,
+        linewidth=0.2
+    )
+
+    for i in range(len(patches)):
+        if bins[i] < starting_price:
+            patches[i].set_facecolor(RISK_RED)
+            patches[i].set_alpha(0.6)
+
+    ax2.axhline(y=metrics['mean_final_price'], color=TEXT_COLOR, linewidth=1.5)
+    ax2.axhline(y=metrics['lower_bound'], color=RISK_RED, linestyle=':', linewidth=1.5)
+    ax2.axhline(y=metrics['upper_bound'], color=AMBER, linestyle=':', linewidth=1.5)
+
+    # --- STATUS BAR ---
+    # Removed for compatibility
+
+    # --- STYLING ---
+    for ax in [ax1, ax2]:
+        ax.tick_params(axis='both', colors=TEXT_COLOR, labelsize=9)
+        ax.grid(True, color=GRID_COLOR, linewidth=0.5, alpha=0.3)
+
+        for spine in ax.spines.values():
+            spine.set_edgecolor(GRID_COLOR)
+            spine.set_linewidth(1.2)
+
+    ax1.set_title(
+        f"{ticker} // MONTE CARLO SIMULATION ANALYSIS",
+        loc='left',
+        color=AMBER,
+        fontsize=15,
+        fontweight='bold',
+        pad=25
+    )
+
+    ax1.set_ylabel("PRICE ($)", color=TEXT_COLOR, fontsize=10, fontweight='bold')
+    ax1.set_xlabel("TRADING DAYS", color=TEXT_COLOR, fontsize=10, fontweight='bold')
+
+    plt.setp(ax2.get_yticklabels(), visible=False)
+    ax2.set_xlabel("FREQ", color=TEXT_COLOR, fontsize=9)
+
     return fig
+
 
 
 def print_results(ticker, metrics, num_days):
@@ -388,17 +396,19 @@ def print_results(ticker, metrics, num_days):
     print(f"{'='*60}")
     print(f"Forecast Period: {num_days} trading days")
     print(f"\nPRICE PREDICTIONS:")
-    print(f"  Mean Final Price:        ${metrics['mean_final_price']:.2f}")
-    print(f"  90% Confidence Interval: [${metrics['lower_bound']:.2f}, ${metrics['upper_bound']:.2f}]")
+    print(f"  Mean Final Price:        USD{metrics['mean_final_price']:.2f}")
+    print(f"  90% Confidence Interval: [USD{metrics['lower_bound']:.2f}, USD{metrics['upper_bound']:.2f}]")
     print(f"\nRISK METRICS:")
-    print(f"  Value at Risk (95%):     ${metrics['var_95_loss']:.2f}")
-    print(f"  Value at Risk (99%):     ${metrics['var_99_loss']:.2f}")
-    print(f"  Sharpe Ratio:            {metrics['sharpe_ratio']:.2f}")
+    print(f"  Value at Risk (95%):     USD{metrics['var_95_loss']:.2f}")
+    print(f"  Value at Risk (99%):     USD{metrics['var_99_loss']:.2f}")
+    print(f"  Sharpe Ratio (Ex-Ante):  {metrics['sharpe_ratio_ante']:.2f}")
+    print(f"  Sharpe Ratio (Ex-Post):  {metrics['sharpe_ratio_post']:.2f}")
+
     print(f"\nPROBABILITIES:")
     print(f"  Probability of Profit:   {metrics['prob_profit']:.1f}%")
     print(f"  Probability of Loss:     {metrics['prob_loss']:.1f}%")
-    print(f"  Average Gain:            ${metrics['avg_gain']:.2f}")
-    print(f"  Average Loss:            ${metrics['avg_loss']:.2f}")
+    print(f"  Average Gain:            USD{metrics['avg_gain']:.2f}")
+    print(f"  Average Loss:            USD{metrics['avg_loss']:.2f}")
     print(f"{'='*60}\n")
 
 
@@ -410,7 +420,8 @@ def main():
     Main function to run the Monte Carlo simulation
     """
     # Configuration
-    ticker = 'AAPL'
+    ticker = 'MSFT' \
+    ''
     start_date = '2015-12-14'
     end_date = '2025-12-14'
     timeframe = '1_year'  # Change this to any key from TIMEFRAMES
