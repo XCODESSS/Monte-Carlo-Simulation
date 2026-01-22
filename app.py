@@ -245,11 +245,11 @@ if run_button:
     # Risk-adjusted performance
     st.divider()
     st.subheader("Risk-Adjusted Performance")
-    st.write(f"**Sharpe Ratio:** {metrics['sharpe_ratio_ante']:.2f}")
+    st.write(f"**Sharpe Ratio:** {metrics['sharpe_ratio_post']:.2f}")
 
-    if metrics['sharpe_ratio_ante'] > 2:
+    if metrics['sharpe_ratio_post'] > 2:
         st.success("Excellent risk-adjusted returns")
-    elif metrics['sharpe_ratio_ante'] > 1:
+    elif metrics['sharpe_ratio_post'] > 1:
         st.info("Good risk-adjusted returns")
     else:
         st.warning("Low risk-adjusted returns")
