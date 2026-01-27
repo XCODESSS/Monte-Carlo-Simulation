@@ -46,6 +46,27 @@ with st.sidebar:
         num_days = TIMEFRAMES[timeframe]
         timeframe_label = timeframe.replace('_', ' ')
     
+    # Historical Data Settings
+    st.subheader("🕰️ Historical Data")
+    use_rolling_window = st.checkbox(
+        "Use Rolling Window",
+        value=True,
+        help="Use only recent data for parameter estimation (better for short-term forecasts)"
+    )
+
+    if use_rolling_window:
+        lookback_days = st.slider(
+            "Lookback Period (Days)",
+            min_value=30,
+            max_value=252*5, # 5 years
+            value=252, # 1 year
+            step=10,
+            help="Number of trading days to use for calculating volatility and drift"
+        )
+    else:
+        lookback_days = None
+        st.caption("Using all available historical data (up to 10 years)")
+
     # Distribution selection
     st.subheader("📊 Distribution Model")
     
@@ -119,7 +140,17 @@ if run_button:
     
     # Calculate statistics
     with st.spinner("Calculating statistics..."):
-        stats = calculate_statistics(data)
+        # Apply Rolling Window logic
+        if use_rolling_window and lookback_days:
+            if len(data) > lookback_days:
+                stats_data = data.tail(lookback_days)
+            else:
+                stats_data = data
+                st.warning(f"⚠️ Data length ({len(data)} days) is shorter than requested lookback ({lookback_days} days). Using all available data.")
+        else:
+            stats_data = data
+
+        stats = calculate_statistics(stats_data)
 
     # Run simulation based on distribution choice
     if distribution == "Both":
@@ -196,7 +227,14 @@ if run_button:
         timeframe_label = f"{num_days} days"
     else:
         timeframe_label = timeframe.replace('_', ' ')
-    st.write(f"**Ticker:** {ticker} | **Period:** {timeframe_label} | **Distribution:** {distribution}")
+
+    # Display Lookback info
+    if use_rolling_window:
+        lookback_info = f"Rolling {lookback_days} Days"
+    else:
+        lookback_info = "Full History"
+
+    st.write(f"**Ticker:** {ticker} | **Period:** {timeframe_label} | **Data:** {lookback_info} | **Distribution:** {distribution}")
     
     # Key metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -407,4 +445,3 @@ if run_button:
             num_simulations
         )
         st.pyplot(fig, use_container_width=True)
-

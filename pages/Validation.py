@@ -44,6 +44,25 @@ with col2:
         help="How far back to use for parameter estimation"
     )
 
+    st.write("---")
+    use_rolling_window = st.checkbox(
+        "Use Rolling Window",
+        value=True,
+        help="Use only recent data for parameter estimation (better for short-term forecasts)"
+    )
+
+    if use_rolling_window:
+        lookback_days = st.number_input(
+            "Lookback Period (Days)",
+            min_value=30,
+            max_value=252*5,
+            value=252,
+            step=10,
+            help="Number of trading days to use for calculating volatility and drift"
+        )
+    else:
+        lookback_days = None
+
 # Validate date inputs
 if historical_start >= backtest_end:
     st.error("❌ Historical Data Start must be before Backtest End Date")
@@ -90,8 +109,17 @@ if st.button("Run Backtest", type="primary"):
             if len(data) < 30:
                 continue
             
+            # Apply Rolling Window logic
+            if use_rolling_window and lookback_days:
+                if len(data) > lookback_days:
+                    stats_data = data.tail(lookback_days)
+                else:
+                    stats_data = data
+            else:
+                stats_data = data
+
             # Calculate statistics
-            stats = calculate_statistics(data)
+            stats = calculate_statistics(stats_data)
             
             # Run simulation
             simulations = run_monte_carlo(
