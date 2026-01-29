@@ -6,6 +6,12 @@ import seaborn as sns
 from datetime import datetime, timedelta 
 from scipy.stats import binomtest
 from Monte_Carlo import *
+import os
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_download_stock_data(ticker, start_date, end_date):
+    """Cached wrapper for download_stock_data"""
+    return download_stock_data(ticker, start_date, end_date)
 
 # Configure matplotlib/seaborn for dark theme
 plt.rcParams['figure.facecolor'] = '#0e1117'
@@ -29,6 +35,21 @@ col1, col2 = st.columns(2)
 
 with col1:
     ticker = st.text_input("Stock Ticker", value="AAPL")
+        # API Key for Indian Stocks
+    alpha_vantage_key = None
+    try:
+        if "ALPHA_VANTAGE_KEY" in st.secrets:
+            alpha_vantage_key = st.secrets["ALPHA_VANTAGE_KEY"]
+    except FileNotFoundError:
+        pass
+    
+    if not alpha_vantage_key and "ALPHA_VANTAGE_KEY" in os.environ:
+        alpha_vantage_key = os.environ["ALPHA_VANTAGE_KEY"]
+        
+    if ticker.endswith('.NS') and not alpha_vantage_key:
+        alpha_vantage_key = st.text_input("Alpha Vantage API Key", type="password", help="Required for Indian stocks (.NS)")
+        if not alpha_vantage_key:
+            st.warning("⚠️ Alpha Vantage API key required for Indian stocks.")
     timeframe = st.selectbox("Forecast Timeframe", list(TIMEFRAMES.keys()))
     num_backtests = st.slider("Number of Backtests", min_value=10, max_value=100, value=30, step=5)
 
@@ -78,12 +99,12 @@ if st.button("Run Backtest", type="primary"):
     
     # Generate test dates going BACKWARDS from end_date (so we test predictions made before the end date)
     # This ensures we're testing predictions made in the past, not the future
-    test_dates = pd.date_range(end=end_date, periods=num_backtests, freq='M')
+    test_dates = pd.date_range(end=end_date, periods=num_backtests, freq='ME')
     test_dates = test_dates.sort_values()  # Ensure chronological order
 
     # Validation check
     try:
-        test_data = download_stock_data(ticker, start_date_str, end_date_str)
+        test_data = cached_download_stock_data(ticker, start_date_str, end_date_str)
         if test_data.empty:
             st.error(f"❌ No data found for ticker '{ticker}'. Please check the symbol.")
             st.stop()
@@ -103,7 +124,7 @@ if st.button("Run Backtest", type="primary"):
         
         try:
             # Download data UP TO test_date only
-            data = download_stock_data(ticker, start_date_str, test_date.strftime('%Y-%m-%d'))
+            data = download_stock_data(ticker, start_date_str, test_date.strftime('%Y-%m-%d'), api_key=alpha_vantage_key)
             
             # Skip if insufficient data (need at least 30 days for meaningful statistics)
             if len(data) < 30:
@@ -151,7 +172,8 @@ if st.button("Run Backtest", type="primary"):
             actual_data = download_stock_data(
                 ticker, 
                 test_date.strftime('%Y-%m-%d'), 
-                forecast_date.strftime('%Y-%m-%d')
+                forecast_date.strftime('%Y-%m-%d'),
+                api_key=alpha_vantage_key
             )
             
             # IMPORTANT: Get the price at exactly num_days trading days after test_date

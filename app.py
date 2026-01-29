@@ -5,11 +5,17 @@ import matplotlib.gridspec as gridspec
 import seaborn as sns
 from Monte_Carlo import *
 from datetime import datetime, timedelta
+import os
 
-# Set wide layout and page config
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_download_stock_data(ticker, start_date, end_date):
+    """Cached wrapper for download_stock_data"""
+    return download_stock_data(ticker, start_date, end_date)
+
+
 st.set_page_config(layout="wide", page_title="Monte Carlo Stock Simulator")
 
-# Configure matplotlib/seaborn for dark theme
+
 plt.rcParams['figure.facecolor'] = '#0e1117'
 plt.rcParams['axes.facecolor'] = '#0e1117'
 plt.rcParams['savefig.facecolor'] = '#0e1117'
@@ -21,13 +27,30 @@ plt.rcParams['axes.edgecolor'] = '#2d2d2d'
 plt.rcParams['grid.color'] = '#2d2d2d'
 sns.set_style("darkgrid", {'axes.facecolor': '#0e1117', 'figure.facecolor': '#0e1117'})
 
-st.title("📈 Monte Carlo Stock Price Simulator")
+st.title(" Monte Carlo Stock Price Simulator")
 
-# All inputs in sidebar
+
 with st.sidebar:
     st.header("Configuration")
     
     ticker = st.text_input("Stock Ticker", value="AAPL")
+       # API Key for Indian Stocks
+    alpha_vantage_key = None
+    # Check secrets or env vars
+    try:
+        if "ALPHA_VANTAGE_KEY" in st.secrets:
+            alpha_vantage_key = st.secrets["ALPHA_VANTAGE_KEY"]
+    except FileNotFoundError:
+        pass
+    
+    if not alpha_vantage_key and "ALPHA_VANTAGE_KEY" in os.environ:
+        alpha_vantage_key = os.environ["ALPHA_VANTAGE_KEY"]
+        
+    # If ticker suggests Indian stock and key not found automatically, ask user
+    if ticker.endswith('.NS') and not alpha_vantage_key:
+        alpha_vantage_key = st.text_input("Alpha Vantage API Key", type="password", help="Required for Indian stocks (.NS)")
+        if not alpha_vantage_key:
+            st.warning("⚠️ Alpha Vantage API key required for Indian stocks.")
     
     # Days selection
     st.subheader("📅 Forecast Period")
@@ -46,27 +69,6 @@ with st.sidebar:
         num_days = TIMEFRAMES[timeframe]
         timeframe_label = timeframe.replace('_', ' ')
     
-    # Historical Data Settings
-    st.subheader("🕰️ Historical Data")
-    use_rolling_window = st.checkbox(
-        "Use Rolling Window",
-        value=True,
-        help="Use only recent data for parameter estimation (better for short-term forecasts)"
-    )
-
-    if use_rolling_window:
-        lookback_days = st.slider(
-            "Lookback Period (Days)",
-            min_value=30,
-            max_value=252*5, # 5 years
-            value=252, # 1 year
-            step=10,
-            help="Number of trading days to use for calculating volatility and drift"
-        )
-    else:
-        lookback_days = None
-        st.caption("Using all available historical data (up to 10 years)")
-
     # Distribution selection
     st.subheader("📊 Distribution Model")
     
@@ -123,7 +125,7 @@ if run_button:
         start_date = end_date - timedelta(days=365 * 10)
 
         try:
-            data = download_stock_data(
+            data = cached_download_stock_data(
                 ticker, 
                 start_date.strftime('%Y-%m-%d'), 
                 end_date.strftime('%Y-%m-%d')
@@ -140,17 +142,7 @@ if run_button:
     
     # Calculate statistics
     with st.spinner("Calculating statistics..."):
-        # Apply Rolling Window logic
-        if use_rolling_window and lookback_days:
-            if len(data) > lookback_days:
-                stats_data = data.tail(lookback_days)
-            else:
-                stats_data = data
-                st.warning(f"⚠️ Data length ({len(data)} days) is shorter than requested lookback ({lookback_days} days). Using all available data.")
-        else:
-            stats_data = data
-
-        stats = calculate_statistics(stats_data)
+        stats = calculate_statistics(data)
 
     # Run simulation based on distribution choice
     if distribution == "Both":
@@ -227,14 +219,7 @@ if run_button:
         timeframe_label = f"{num_days} days"
     else:
         timeframe_label = timeframe.replace('_', ' ')
-
-    # Display Lookback info
-    if use_rolling_window:
-        lookback_info = f"Rolling {lookback_days} Days"
-    else:
-        lookback_info = "Full History"
-
-    st.write(f"**Ticker:** {ticker} | **Period:** {timeframe_label} | **Data:** {lookback_info} | **Distribution:** {distribution}")
+    st.write(f"**Ticker:** {ticker} | **Period:** {timeframe_label} | **Distribution:** {distribution}")
     
     # Key metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -318,7 +303,7 @@ if run_button:
             
             # Faint cloud of paths (very low alpha for clarity)
             for i in range(num_paths):
-                ax1.plot(days_array, simulations_normal[i], color='#4A90E2', alpha=0.05, linewidth=0.5, zorder=1)
+                ax1.plot(days_array, simulations_normal[: num_paths].T, color='#4A90E2', alpha=0.05, linewidth=0.5, zorder=1)
             
             percentiles_norm = np.percentile(simulations_normal, [5, 50, 95], axis=0)
             # Distinct shaded area for 90% CI
@@ -351,7 +336,7 @@ if run_button:
             
             # Faint cloud of paths (very low alpha for clarity)
             for i in range(num_paths):
-                ax2.plot(days_array, simulations_student_t[i], color='#E74C3C', alpha=0.05, linewidth=0.5, zorder=1)
+                ax2.plot(days_array, simulations_student_t[: num_paths].T, color='#E74C3C', alpha=0.05, linewidth=0.5, zorder=1)
             
             percentiles_t = np.percentile(simulations_student_t, [5, 50, 95], axis=0)
             # Distinct shaded area for 90% CI
@@ -445,3 +430,4 @@ if run_button:
             num_simulations
         )
         st.pyplot(fig, use_container_width=True)
+

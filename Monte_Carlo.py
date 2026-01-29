@@ -4,11 +4,16 @@ Properly structured with functions and modular design
 """
 
 import yfinance as yf
+from alpha_vantage.timeseries import TimeSeries
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from scipy.stats import t
+import requests
+import io
+import time
+import streamlit as st
 
 # CONFIGURATION
 
@@ -23,35 +28,162 @@ TIMEFRAMES = {
     '1_year': 252
 }
 
+# Data Functions
 
-# DATA FUNCTIONS
+
+def fetch_alpha_vantage_data(ticker, api_key):
+    """
+    Fetch data from Alpha Vantage for Indian stocks
+
+    Args:
+        ticker: Stock symbol (e.g., 'RELIANCE.NS')
+        api_key: Alpha Vantage API key
+
+    Returns:
+        DataFrame with stock data in same format as yfinance
+    """
+    # Alpha Vantage uses 'BSE:SYMBOL' or 'SYMBOL.BSE' for Indian stocks.
+    # Try as provided first, then fallback.
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&apikey={api_key}&datatype=csv&outputsize=full"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        content = response.content.decode('utf-8')
+
+        # Error or information check
+        if "Error Message" in content:
+            # Try replacing .NS with .BSE as fallback for Indian stocks
+            if ticker.endswith('.NS'):
+                fallback_ticker = ticker.replace('.NS', '.BSE')
+                url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={fallback_ticker}&apikey={api_key}&datatype=csv&outputsize=full"
+                response = requests.get(url)
+                response.raise_for_status()
+                content = response.content.decode('utf-8')
+                if "Error Message" in content:
+                    raise ValueError(f"Alpha Vantage Error: {content}")
+            else:
+                raise ValueError(f"Alpha Vantage Error: {content}")
+        if "Information" in content:
+            # Rate limit or information message
+            raise ValueError(f"Alpha Vantage Rate Limit/Info: {content}")
+
+        # Parse CSV
+        df = pd.read_csv(io.StringIO(content))
+        if 'timestamp' not in df.columns:
+            raise ValueError("Alpha Vantage data does not contain 'timestamp' column or data is unavailable.")
+
+        # Normalize columns
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df.set_index('timestamp', inplace=True)
+        df.sort_index(inplace=True)
+
+        # Rename to Title Case as yfinance
+        df.rename(columns={
+            'open': 'Open',
+            'high': 'High',
+            'low': 'Low',
+            'close': 'Close',
+            'volume': 'Volume'
+        }, inplace=True)
+
+        if df.empty or 'Close' not in df.columns:
+            raise ValueError("Alpha Vantage returned empty dataframe or missing 'Close' column.")
+
+        return df
+
+    except Exception as e:
+        # It is better to print than to raise here: The upstream function will handle fallback
+        raise ValueError(f"Failed to fetch data from Alpha Vantage: {str(e)}")
 
 
-def download_stock_data(ticker, start_date, end_date):
+@st.cache_data(ttl=3600, show_spinner=False)
+def download_stock_data(ticker, start_date, end_date, api_key=None):
     """
     Download historical stock data
-    
+
     Args:
         ticker: Stock symbol (e.g., 'AAPL')
         start_date: Start date string (e.g., '2015-12-14')
         end_date: End date string (e.g., '2025-12-14')
-    
+        api_key: Optional Alpha Vantage API key for Indian stocks
+
     Returns:
         DataFrame with stock data
-    
+
     Raises:
         ValueError: If ticker is empty or invalid
     """
-    if not ticker or not ticker.strip():
+    if not ticker or not str(ticker).strip():
         raise ValueError("Ticker cannot be empty")
-    
+
+    # Check for Indian stock and API key
+    if ticker.endswith('.NS') and api_key:
+        try:
+            data = fetch_alpha_vantage_data(ticker, api_key)
+
+            # Check DataFrame and that it's not empty
+            if data.empty:
+                raise ValueError(f"No data returned from Alpha Vantage for {ticker}.")
+
+            # Ensure index is datetime
+            if not isinstance(data.index, pd.DatetimeIndex):
+                data.index = pd.to_datetime(data.index)
+
+            # Filter by date range
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date)
+            data = data.loc[(data.index >= start_dt) & (data.index <= end_dt)]
+
+            # Data still empty? Fallback to yfinance below.
+            if not data.empty:
+                # Check for Close column (should always be there from AV but check)
+                if 'Close' not in data.columns:
+                    if 'close' in data.columns:
+                        data.rename(columns={'close': 'Close'}, inplace=True)
+                    else:
+                        raise ValueError(f"Alpha Vantage data for {ticker} is missing 'Close' column after filtering.")
+
+                # Drop NaN Close values if any
+                if data['Close'].isnull().any():
+                    data.dropna(subset=['Close'], inplace=True)
+
+                if data.empty:
+                    raise ValueError(f"No valid data after filtering and dropna from Alpha Vantage for {ticker}.")
+
+                return data
+
+            # If empty after filtering, fall through to yfinance fallback
+
+        except Exception as e:
+            # Print error and fallback to yfinance
+            print(f"Alpha Vantage fetch failed: {e}. Falling back to yfinance.")
+
+    # Fallback: yfinance
     data = yf.download(ticker, start=start_date, end=end_date, progress=False)
-    
-    # Handle MultiIndex columns (yfinance sometimes returns MultiIndex)
+
+    # Handle MultiIndex (seen in some yfinance returns)
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.droplevel(1)
-    
+
+    # Validate
+    if data.empty:
+        # Return empty for UI to handle
+        return data
+
+    # Ensure 'Close' column exists (should for yfinance)
+    if 'Close' not in data.columns:
+        # Check for lowercase
+        if 'close' in data.columns:
+            data.rename(columns={'close': 'Close'}, inplace=True)
+        else:
+            raise ValueError(f"Downloaded data for {ticker} is missing 'Close' price column.")
+
+    # Drop missing Close prices
+    if data['Close'].isnull().any():
+        data.dropna(subset=['Close'], inplace=True)
+
     return data
+
 
 
 def calculate_statistics(data):
@@ -132,30 +264,28 @@ def run_monte_carlo(starting_price, mu, sigma, num_days, num_simulations, distri
         raise ValueError("Student-t distribution requires df > 2")
     
     dt = 1 
-    # Generate random shocks based on distribution choice
+
     if distribution == "Student-t (Fat Tails)" and df is not None:
-        # Student-t distribution for fat tails
+
         random_shocks = np.random.standard_t(df, (num_simulations, num_days))
-        # Normalize to unit variance
+
         if df > 2:
             random_shocks = random_shocks / np.sqrt(df / (df - 2))
     else:
-        # Standard normal distribution
+
         random_shocks = np.random.normal(0, 1, (num_simulations, num_days))
     
-    # OPTIMIZED: Vectorized GBM calculation using cumulative sum
     # Formula: S(t) = S(0) * exp(sum of increments from 0 to t)
     drift = (mu - 0.5 * sigma**2) * dt
     diffusion = sigma * np.sqrt(dt) * random_shocks
     
-    # Calculate cumulative increments (cumsum along time axis)
+
     increments = drift + diffusion
     cumulative_increments = np.cumsum(increments, axis=1)
     
-    # Apply exponential to get price paths
+
     price_paths = starting_price * np.exp(cumulative_increments)
     
-    # Ensure first column is starting price (handles floating point precision)
     price_paths[:, 0] = starting_price
 
     return price_paths
@@ -211,36 +341,36 @@ def calculate_metrics(
     Calculate all risk metrics from simulation results
     
     """
-    # Get final prices
+
     final_prices = simulations[:, -1]
     
-    # Basic statistics
+
     mean_final_price = np.mean(final_prices)
     lower_bound = np.percentile(final_prices, 5)
     upper_bound = np.percentile(final_prices, 95)
     
-    # Value at Risk
+
     var_95_loss = max(0, starting_price - lower_bound)
     var_99_loss = max(0, starting_price - np.percentile(final_prices, 1))
     
-    # Annualized volatility (log returns)
+
     annual_volatility = sigma * np.sqrt(252)
 
-    # Ex-post Sharpe (simulation-based, diagnostic only)
+
     total_return = (mean_final_price - starting_price) / starting_price
     annual_return_post = total_return * (252 / num_days)
     sharpe_ratio_post = (
         annual_return_post / annual_volatility if annual_volatility != 0 else 0.0
     )
 
-    # Ex-ante Sharpe (model-implied, preferred)
+
     sharpe_ratio_ante = mu / sigma if sigma != 0 else 0.0
 
     
-    # Probability of profit/loss
+
     prob_profit = (final_prices > starting_price).mean() * 100
     prob_loss = (final_prices < starting_price).mean() * 100
-    # Percentage-based gains & losses (as decimal returns, not percentages)
+
     returns = (final_prices - starting_price) / starting_price
     avg_gain = returns[returns > 0].mean() if (returns > 0).any() else 0.0
     avg_loss = returns[returns < 0].mean() if (returns < 0).any() else 0.0
@@ -264,13 +394,13 @@ def calculate_metrics(
 
 
 def plot_simulation(simulations, metrics, starting_price, sigma, ticker, num_days, num_simulations):
-    # Bloomberg Palette
+
     BG_COLOR = '#000000'
     GRID_COLOR = '#262626'
     TEXT_COLOR = '#FFFFFF'
     AMBER = '#FF9900'
     RISK_RED = '#FF3333'
-    SILVER = '#d9d9d9'   # Bloomberg silver
+    SILVER = '#d9d9d9'   
 
     # Figure & Grid
     fig = plt.figure(figsize=(16, 9), facecolor=BG_COLOR, dpi=120)
@@ -290,7 +420,7 @@ def plot_simulation(simulations, metrics, starting_price, sigma, ticker, num_day
     for i in range(num_paths_to_plot):
         ax1.plot(
             days_array,
-            simulations[i],
+            simulations[: num_paths_to_plot].T,
             color=SILVER,
             alpha=0.03,
             linewidth=0.7,
@@ -396,19 +526,19 @@ def print_results(ticker, metrics, num_days):
     print(f"{'='*60}")
     print(f"Forecast Period: {num_days} trading days")
     print(f"\nPRICE PREDICTIONS:")
-    print(f"  Mean Final Price:        USD{metrics['mean_final_price']:.2f}")
-    print(f"  90% Confidence Interval: [USD{metrics['lower_bound']:.2f}, USD{metrics['upper_bound']:.2f}]")
+    print(f"  Mean Final Price:        {metrics['mean_final_price']:.2f}")
+    print(f"  90% Confidence Interval: [{metrics['lower_bound']:.2f}, USD{metrics['upper_bound']:.2f}]")
     print(f"\nRISK METRICS:")
-    print(f"  Value at Risk (95%):     USD{metrics['var_95_loss']:.2f}")
-    print(f"  Value at Risk (99%):     USD{metrics['var_99_loss']:.2f}")
+    print(f"  Value at Risk (95%):     {metrics['var_95_loss']:.2f}")
+    print(f"  Value at Risk (99%):     {metrics['var_99_loss']:.2f}")
     print(f"  Sharpe Ratio (Ex-Ante):  {metrics['sharpe_ratio_ante']:.2f}")
     print(f"  Sharpe Ratio (Ex-Post):  {metrics['sharpe_ratio_post']:.2f}")
 
     print(f"\nPROBABILITIES:")
     print(f"  Probability of Profit:   {metrics['prob_profit']:.1f}%")
     print(f"  Probability of Loss:     {metrics['prob_loss']:.1f}%")
-    print(f"  Average Gain:            USD{metrics['avg_gain']:.2f}")
-    print(f"  Average Loss:            USD{metrics['avg_loss']:.2f}")
+    print(f"  Average Gain:            {metrics['avg_gain']:.2f}")
+    print(f"  Average Loss:            {metrics['avg_loss']:.2f}")
     print(f"{'='*60}\n")
 
 
@@ -420,8 +550,7 @@ def main():
     Main function to run the Monte Carlo simulation
     """
     # Configuration
-    ticker = 'MSFT' \
-    ''
+    ticker = 'NVDA'
     start_date = '2015-12-14'
     end_date = '2025-12-14'
     timeframe = '1_year'  # Change this to any key from TIMEFRAMES
