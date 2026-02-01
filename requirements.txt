@@ -8,3 +8,5 @@ scipy>=1.10.0
 pytest>=7.4.0
 pytest-cov>=4.1.0
 requests>=2.31.0
+alpha-vantage
+requests
