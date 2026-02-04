@@ -258,23 +258,17 @@ def run_monte_carlo(starting_price, mu, sigma, num_days, num_simulations, distri
         raise ValueError("Starting price must be positive")
     if num_days <= 0 or num_simulations <= 0:
         raise ValueError("num_days and num_simulations must be positive")
-    if distribution == "Student-t (Fat Tails)" and (df is None or df <= 2):
-        raise ValueError("Student-t distribution requires df > 2")
+
+    # Delegate to Student-t function if requested
+    if distribution == "Student-t (Fat Tails)":
+        return run_monte_carlo_student_t(starting_price, mu, sigma, num_days, num_simulations, df=df)
     
     dt = 1 
 
-    if distribution == "Student-t (Fat Tails)" and df is not None:
-
-        random_shocks = np.random.standard_t(df, (num_simulations, num_days))
-
-        if df > 2:
-            random_shocks = random_shocks / np.sqrt(df / (df - 2))
-    else:
-
-        random_shocks = np.random.normal(0, 1, (num_simulations, num_days))
+    random_shocks = np.random.normal(0, 1, (num_simulations, num_days))
     
     # Formula: S(t) = S(0) * exp(sum of increments from 0 to t)
-    drift = (mu - 0.5 * sigma**2) * dt
+    drift = mu * dt
     diffusion = sigma * np.sqrt(dt) * random_shocks
     
 
@@ -303,6 +297,13 @@ def run_monte_carlo_student_t(
     
     OPTIMIZED: Uses vectorized operations for 20-30x performance improvement
     """
+    if starting_price <= 0:
+        raise ValueError("Starting price must be positive")
+    if num_days <= 0 or num_simulations <= 0:
+        raise ValueError("num_days and num_simulations must be positive")
+    if df is None or df <= 2:
+        raise ValueError("Student-t distribution requires df > 2")
+
     dt = 1
 
 
@@ -310,7 +311,7 @@ def run_monte_carlo_student_t(
     shocks = shocks / np.sqrt(df / (df - 2))
 
 
-    drift = (mu - 0.5 * sigma**2) * dt
+    drift = mu * dt
     diffusion = sigma * np.sqrt(dt) * shocks
 
     increments = drift + diffusion
