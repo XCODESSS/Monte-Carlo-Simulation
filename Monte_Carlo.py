@@ -42,17 +42,15 @@ def fetch_alpha_vantage_data(ticker, api_key):
     Returns:
         DataFrame with stock data in same format as yfinance
     """
-    # Alpha Vantage uses 'BSE:SYMBOL' or 'SYMBOL.BSE' for Indian stocks.
-    # Try as provided first, then fallback.
+
     url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&apikey={api_key}&datatype=csv&outputsize=full"
     try:
         response = requests.get(url)
         response.raise_for_status()
         content = response.content.decode('utf-8')
 
-        # Error or information check
         if "Error Message" in content:
-            # Try replacing .NS with .BSE as fallback for Indian stocks
+
             if ticker.endswith('.NS'):
                 fallback_ticker = ticker.replace('.NS', '.BSE')
                 url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={fallback_ticker}&apikey={api_key}&datatype=csv&outputsize=full"
@@ -64,20 +62,20 @@ def fetch_alpha_vantage_data(ticker, api_key):
             else:
                 raise ValueError(f"Alpha Vantage Error: {content}")
         if "Information" in content:
-            # Rate limit or information message
+
             raise ValueError(f"Alpha Vantage Rate Limit/Info: {content}")
 
-        # Parse CSV
+
         df = pd.read_csv(io.StringIO(content))
         if 'timestamp' not in df.columns:
             raise ValueError("Alpha Vantage data does not contain 'timestamp' column or data is unavailable.")
 
-        # Normalize columns
+
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df.set_index('timestamp', inplace=True)
         df.sort_index(inplace=True)
 
-        # Rename to Title Case as yfinance
+
         df.rename(columns={
             'open': 'Open',
             'high': 'High',
@@ -92,7 +90,7 @@ def fetch_alpha_vantage_data(ticker, api_key):
         return df
 
     except Exception as e:
-        # It is better to print than to raise here: The upstream function will handle fallback
+
         raise ValueError(f"Failed to fetch data from Alpha Vantage: {str(e)}")
 
 
@@ -116,34 +114,34 @@ def download_stock_data(ticker, start_date, end_date, api_key=None):
     if not ticker or not str(ticker).strip():
         raise ValueError("Ticker cannot be empty")
 
-    # Check for Indian stock and API key
+
     if ticker.endswith('.NS') and api_key:
         try:
             data = fetch_alpha_vantage_data(ticker, api_key)
 
-            # Check DataFrame and that it's not empty
+
             if data.empty:
                 raise ValueError(f"No data returned from Alpha Vantage for {ticker}.")
 
-            # Ensure index is datetime
+
             if not isinstance(data.index, pd.DatetimeIndex):
                 data.index = pd.to_datetime(data.index)
 
-            # Filter by date range
+
             start_dt = pd.to_datetime(start_date)
             end_dt = pd.to_datetime(end_date)
             data = data.loc[(data.index >= start_dt) & (data.index <= end_dt)]
 
-            # Data still empty? Fallback to yfinance below.
+
             if not data.empty:
-                # Check for Close column (should always be there from AV but check)
+
                 if 'Close' not in data.columns:
                     if 'close' in data.columns:
                         data.rename(columns={'close': 'Close'}, inplace=True)
                     else:
                         raise ValueError(f"Alpha Vantage data for {ticker} is missing 'Close' column after filtering.")
 
-                # Drop NaN Close values if any
+
                 if data['Close'].isnull().any():
                     data.dropna(subset=['Close'], inplace=True)
 
@@ -152,16 +150,16 @@ def download_stock_data(ticker, start_date, end_date, api_key=None):
 
                 return data
 
-            # If empty after filtering, fall through to yfinance fallback
+
 
         except Exception as e:
-            # Print error and fallback to yfinance
+
             print(f"Alpha Vantage fetch failed: {e}. Falling back to yfinance.")
 
-    # Fallback: yfinance
+
     data = yf.download(ticker, start=start_date, end=end_date, progress=False)
 
-    # Handle MultiIndex (seen in some yfinance returns)
+
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.droplevel(1)
 
