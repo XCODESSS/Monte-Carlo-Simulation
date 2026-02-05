@@ -1,69 +1,27 @@
 # Monte Carlo Stock Simulator
 
-### Probabilistic forecasting with 90% validated accuracy
+Probabilistic stock price forecasting using Geometric Brownian Motion. **90% validated accuracy** on historical backtests.
 
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org)
-[![Streamlit](https://img.shields.io/badge/Streamlit-Live%20Demo-red.svg)](https://your-app.streamlit.app)
-[![Validation](https://img.shields.io/badge/Accuracy-90%25-success.svg)]()
-
-**[ Try Live Demo](https://monte-carlo-simulation-1.streamlit.app/)** | **[📧 Contact Me](#contact)**
-
-<div align="center">
-<img src="screenshots/main-demo.gif" alt="Demo" width="800"/>
-</div>
+**[Live Demo](https://monte-carlo-simulation-1.streamlit.app/)** | **[Documentation](#how-it-works)**
 
 ---
 
-## What Makes This Different
+## Results
 
-Most Monte Carlo projects are toy examples. This one actually works:
-
-**90% hit rate** on 30+ historical backtests  
- **Fat-tailed distributions** (Student-t) for realistic crash modeling  
- **Side-by-side comparison** of Normal vs Student-t distributions  
- **Statistical validation** with p-value testing and diagnostics  
- **Production-ready code** with 30x performance optimization
-
----
-
-## Key Results
-
-| What I Built                    | Why It Matters                                      |
-| ------------------------------- | --------------------------------------------------- |
-| **90% Validation Accuracy**     | Predicted ranges captured actual prices 9/10 times  |
-| **1000+ Simulations in <1 sec** | Vectorized NumPy (30x faster than loops)            |
-| **Student-t Fat Tails**         | Captures market crashes Normal distribution misses  |
-| **Real-time Web App**           | Interactive Streamlit dashboard, Bloomberg-style UI |
-
----
-
-## Tech Stack
-
-**Core:** Python · NumPy · Pandas · SciPy  
-**Modeling:** Geometric Brownian Motion · Student-t Distribution · Log Returns  
-**Validation:** Historical Backtesting · Statistical Significance Testing  
-**Frontend:** Streamlit · Matplotlib · Seaborn  
-**Data:** yfinance API
+| Metric                   | Value                                |
+| ------------------------ | ------------------------------------ |
+| Validation Accuracy      | 90.0% (30+ backtests)                |
+| Performance              | 1000 simulations in <1 sec           |
+| Statistical Significance | p-value 0.67 (within expected range) |
 
 ---
 
 ## Features
 
-### Monte Carlo Engine
-
-<img src="screenshots/simulation.png" width="400"/>
-
-- 1000+ price paths using Geometric Brownian Motion
-- Normal vs Student-t distribution comparison
-- Risk metrics: VaR, Sharpe Ratio, confidence intervals
-
-### Validation Dashboard
-
-<img src="screenshots/validation.png" width="400"/>
-
-- Automated historical backtesting
-- 90% accuracy confirmed across 30+ periods
-- Statistical diagnostics and p-value testing
+- **Monte Carlo Simulation** — Normal and Student-t (fat-tailed) distributions
+- **Risk Metrics** — VaR (95%, 99%), Sharpe Ratio, confidence intervals
+- **Validation Dashboard** — Automated backtesting with regime analysis
+- **Model Comparison** — Side-by-side Normal vs Student-t performance
 
 ---
 
@@ -76,71 +34,71 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-**Try it live:** [https://monte-carlo-simulation-1.streamlit.app/](https://monte-carlo-simulation-1.streamlit.app/)
+---
+
+## How It Works
+
+**Model:** Geometric Brownian Motion
+**`S(t+1) = S(t) × exp((μ - 0.5σ²)Δt + σ√Δt × ε)`**
+
+- `μ`, `σ` estimated from historical log returns
+- `ε` ~ Normal(0,1) or Student-t(df) for fat tails
+- 90% confidence intervals from simulation percentiles (5th, 95th)
+
+**Why Student-t?** Real markets have fatter tails than Normal distribution predicts. Student-t captures extreme events (crashes, rallies) more accurately.
 
 ---
 
-## What I Learned
+## Assumptions
 
-**Technical Skills:**
-
-- Statistical modeling and uncertainty quantification
-- Time series analysis with financial data
-- Performance optimization (vectorization)
-- Model validation methodology
-- Production-grade Python architecture
-
-**Domain Knowledge:**
-
-- Financial modeling (GBM, VaR, Sharpe Ratio)
-- Fat-tailed distributions for extreme events
-- Backtesting best practices (avoiding data leakage)
-- Risk management principles
-
-**Evolution:** Started as a coin-flip simulator → Added risk metrics → Implemented rigorous validation → Achieved 90% accuracy → Built production UI
+1. **Constant volatility** — Model uses historical σ, but real volatility changes over time
+2. **Log-normal returns** — Assumes returns follow GBM; ignores jumps, mean reversion
+3. **No fundamental factors** — Doesn't consider earnings, P/E, macroeconomic data
+4. **Historical parameters** — Future may not resemble past
 
 ---
 
-## Technical Highlights
+## Where It Fails
 
-**Geometric Brownian Motion Formula:**
+| Condition                          | Behavior                                    |
+| ---------------------------------- | ------------------------------------------- |
+| High volatility regimes            | Hit rate drops ~5-10%                       |
+| Regime changes (bull→bear)         | Model lags behind transitions               |
+| Black swan events                  | Even Student-t underestimates extreme tails |
+| Long forecast horizons (>3 months) | Intervals become very wide (50%+)           |
 
-```
-S(t+1) = S(t) × exp((μ - 0.5σ²)Δt + σ√Δt × ε)
-where ε ~ N(0,1) or Student-t(df)
-```
-
-**Why Student-t Distribution?**  
-Real markets have more extreme events than Normal distribution predicts. Student-t with df=5 captures these "Black Swan" events realistically.
-
-**Performance Optimization:**  
-Vectorized NumPy operations instead of loops → 30x speedup (5s → 0.15s for 1000 simulations)
+**Directional accuracy: ~50%** — The model quantifies uncertainty well but doesn't predict direction better than chance.
 
 ---
 
-## Project Status
+## When To Use This
 
-**Version:** 2.5 (Production)
+**Good for:**
 
-**Validation Results:**
+- Understanding price uncertainty ranges
+- Risk assessment (VaR, downside scenarios)
+- Comparing volatility across assets
+- Educational purposes
 
-- 90.0% hit rate (expected: 90% ± 5.7%)
-- P-value: 0.67 (not significantly different from expected)
-- Tested across bull markets, bear markets, and COVID crash
+**Not good for:**
+
+- Trading signals
+- Predicting direction
+- Long-term forecasts (>3 months)
+
+---
+
+## Tech Stack
+
+Python · NumPy · Pandas · SciPy · Streamlit · yfinance
 
 ---
 
 ## Contact
 
-**Shreyarth** · 4th Semester IT Student
+**Shreyarth** — [LinkedIn](https://linkedin.com/in/yourprofile) · [GitHub](https://github.com/XCODESSS)
 
-**Email:** your.email@example.com  
- **LinkedIn:** [linkedin.com/in/yourprofile](https://linkedin.com/in/yourprofile)  
- **GitHub:** [@XCODESSS](https://github.com/XCODESSS)
-
-**Seeking:** Data Science Internships | Financial Analysis Roles
-
----
+Seeking Data Science / Financial Analysis internships for Summer 2026.
 
 <div align="center">
 

@@ -18,7 +18,6 @@ def cached_download_stock_data(ticker, start_date, end_date):
     """Cached wrapper for download_stock_data"""
     return download_stock_data(ticker, start_date, end_date)
 
-# Configure matplotlib/seaborn for dark theme
 plt.rcParams['figure.facecolor'] = '#0e1117'
 plt.rcParams['axes.facecolor'] = '#0e1117'
 plt.rcParams['savefig.facecolor'] = '#0e1117'
@@ -117,13 +116,11 @@ if historical_start >= backtest_end:
 
 if st.button("Run Backtest", type="primary"):
     num_days = TIMEFRAMES[timeframe]
-    
-    # Use datetime objects from date_input widgets
+
     end_date = pd.Timestamp(backtest_end)
     start_date_str = historical_start.strftime('%Y-%m-%d')
     end_date_str = backtest_end.strftime('%Y-%m-%d')
     
-    # Generate test dates going BACKWARDS from end_date
     test_dates = pd.date_range(end=end_date, periods=num_backtests, freq='ME')
     test_dates = test_dates.sort_values()
 
@@ -238,42 +235,20 @@ if st.button("Run Backtest", type="primary"):
                     num_days
                 )
                 
-                # For comparison mode, track both
                 lower_bound_normal = metrics_normal['lower_bound']
                 upper_bound_normal = metrics_normal['upper_bound']
                 lower_bound_student_t = metrics_student_t['lower_bound']
                 upper_bound_student_t = metrics_student_t['upper_bound']
 
-            # Get actual price at exactly num_days trading days after test_date
-            calendar_days_buffer = int(num_days * 1.4) + 20
-            forecast_date = test_date + pd.Timedelta(days=calendar_days_buffer)
+            future_mask = full_data.index > test_date
+            future_data = full_data[future_mask]
             
-            # Download data from test_date onwards to get the future price
-            actual_data = download_stock_data(
-                ticker, 
-                test_date.strftime('%Y-%m-%d'), 
-                forecast_date.strftime('%Y-%m-%d'),
-                api_key=alpha_vantage_key
-            )
-            
-            # Get the price at exactly num_days trading days after test_date
-            if len(actual_data) > num_days:
-                # Check if test_date is in the data (it's a trading day)
-                test_date_in_data = test_date in actual_data.index or test_date.date() in [d.date() for d in actual_data.index]
-                
-                if test_date_in_data or actual_data.index[0].date() == test_date.date():
-                    actual_price = float(actual_data['Close'].iloc[num_days])
-                    actual_forecast_date = actual_data.index[num_days]
-                else:
-                    actual_price = float(actual_data['Close'].iloc[num_days - 1])
-                    actual_forecast_date = actual_data.index[num_days - 1]
-                    
-            elif len(actual_data) >= num_days:
-                idx_to_use = min(num_days, len(actual_data) - 1)
-                actual_price = float(actual_data['Close'].iloc[idx_to_use])
-                actual_forecast_date = actual_data.index[idx_to_use]
+            if len(future_data) >= num_days:
+
+                actual_price = float(future_data['Close'].iloc[num_days - 1])
+                actual_forecast_date = future_data.index[num_days - 1]
             else:
-                # Not enough data - skip this test
+                # Not enough future data - skip this test
                 actual_price = None
                 actual_forecast_date = None
 
@@ -313,6 +288,7 @@ if st.button("Run Backtest", type="primary"):
                     'Forecast Date': actual_forecast_date.strftime('%Y-%m-%d') if actual_forecast_date else 'N/A',
                     'Starting Price': stats['starting_price'],
                     'Actual Price': actual_price,
+                    'mu': stats['mu'],
                     'Lower Bound': lower_bound,
                     'Upper Bound': upper_bound,
                     'Within Bounds': within_bounds,
@@ -330,22 +306,17 @@ if st.button("Run Backtest", type="primary"):
     status_text.empty()
     
     if results:
-        # Convert results to DataFrame
         df_results = pd.DataFrame(results)
-        
-        # Filter out None values for accurate hit rate calculation
+
         df_valid = df_results[df_results['Actual Price'].notna()].copy()
         
         if len(df_valid) == 0:
             st.error("No valid results with actual prices. Check date ranges and ensure forecast dates have available data.")
             st.stop()
-        
-        # Display based on distribution mode
+
         if distribution == "Compare Both":
-            # Comparison mode display
             st.success("✅ Validation Complete!")
-            
-            # Calculate hit rates for both models
+
             hit_rate_normal = (df_valid['Within Bounds Normal'].sum() / len(df_valid)) * 100
             hit_rate_student_t = (df_valid['Within Bounds Student-t'].sum() / len(df_valid)) * 100
             
@@ -376,40 +347,33 @@ if st.button("Run Backtest", type="primary"):
             if not df_valid.empty:
                 st.write("---")
                 st.header("🔬 Calibration Analysis")
-                
-                # Create normalized DataFrames for calibration (fix column name mismatch)
+
                 base_cols = ['Test Date', 'Starting Price', 'Actual Price', 'Volatility', 'mu']
                 
-                # Normal model data
                 df_normal = df_valid.rename(columns={
                     'Within Bounds Normal': 'Within Bounds',
                     'Lower Bound Normal': 'Lower Bound',
                     'Upper Bound Normal': 'Upper Bound'
                 })[base_cols + ['Within Bounds', 'Lower Bound', 'Upper Bound']]
                 
-                # Student-t model data  
                 df_student = df_valid.rename(columns={
                     'Within Bounds Student-t': 'Within Bounds',
                     'Lower Bound Student-t': 'Lower Bound',
                     'Upper Bound Student-t': 'Upper Bound'
                 })[base_cols + ['Within Bounds', 'Lower Bound', 'Upper Bound']]
                 
-                # Calculate metrics for both models separately
                 calib_metrics_normal = calculate_calibration_metrics(df_normal)
                 calib_metrics_student = calculate_calibration_metrics(df_student)
                 
 
                 calib_metrics = calib_metrics_student if 'regime_analysis' in calib_metrics_student else calib_metrics_normal
                 
-                # Directional accuracy (pass num_days for proper GBM median calculation)
                 dir_accuracy_normal = calculate_directional_accuracy(df_normal, num_days=num_days)
                 dir_accuracy_student = calculate_directional_accuracy(df_student, num_days=num_days)
                 
-                # Failure patterns
                 failure_patterns_normal = identify_failure_patterns(df_normal)
                 failure_patterns_student = identify_failure_patterns(df_student)
                 
-                # Display regime-based performance
                 st.subheader("📊 Performance by Volatility Regime")
                 
                 regime_data = []
@@ -425,7 +389,6 @@ if st.button("Run Backtest", type="primary"):
                     regime_df = pd.DataFrame(regime_data)
                     st.dataframe(regime_df, use_container_width=True, hide_index=True)
                     
-                    # Interpretation
                     low_vol_hit = calib_metrics['regime_analysis'].get('Low', {}).get('hit_rate', 0)
                     high_vol_hit = calib_metrics['regime_analysis'].get('High', {}).get('hit_rate', 0)
                     
@@ -466,7 +429,6 @@ if st.button("Run Backtest", type="primary"):
                         help="Accuracy when stock went down"
                     )
                 
-                # Failure analysis
                 st.write("---")
                 st.subheader("⚠️ Failure Case Analysis")
                 
@@ -489,7 +451,6 @@ if st.button("Run Backtest", type="primary"):
                     for pattern in failure_patterns['patterns']:
                         st.write(f"- {pattern}")
                 
-                # Worst misses table
                 if calib_metrics['worst_misses']:
                     st.write("---")
                     st.subheader("📉 Worst Prediction Misses")
@@ -549,7 +510,6 @@ if st.button("Run Backtest", type="primary"):
             })
             st.dataframe(comparison_df, use_container_width=True, hide_index=True)
             
-            # Visualization comparing both models
             st.write("---")
             st.subheader("📈 Validation Over Time - Both Models")
             
@@ -625,7 +585,6 @@ if st.button("Run Backtest", type="primary"):
             st.pyplot(fig, use_container_width=True)
             
         else:
-            # Single model display
             st.success("✅ Backtest Complete!")
             
             st.info("""
@@ -639,14 +598,12 @@ if st.button("Run Backtest", type="primary"):
             - **Hit Rate < 75%**: Model may need adjustment ⚠️
             """)
             
-            # Calculate hit rate
             hit_rate = (df_valid['Within Bounds'].sum() / len(df_valid)) * 100
             num_hits = df_valid['Within Bounds'].sum()
             num_misses = len(df_valid) - num_hits
             above_upper = (df_valid['Actual Price'] > df_valid['Upper Bound']).sum()
             below_lower = (df_valid['Actual Price'] < df_valid['Lower Bound']).sum()
             
-            # Display key metrics
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Hit Rate", f"{hit_rate:.1f}%", 
@@ -658,7 +615,6 @@ if st.button("Run Backtest", type="primary"):
                 st.metric("Total Tests", len(df_results),
                         delta=f"{len(df_results) - len(df_valid)} skipped")
             
-            # Calculate diagnostics
             avg_interval_width = ((df_valid['Upper Bound'] - df_valid['Lower Bound']) / df_valid['Starting Price'] * 100).mean()
             
             n = len(df_valid)
@@ -668,7 +624,7 @@ if st.button("Run Backtest", type="primary"):
             
             p_value = binomtest(int(num_hits), n, 0.9, alternative='two-sided').pvalue if n > 0 else 1.0
             
-            # Additional Diagnostics
+
             st.write("---")
             st.subheader("📊 Diagnostic Information")
             
@@ -710,7 +666,83 @@ if st.button("Run Backtest", type="primary"):
                 else:
                     st.warning(f"⚠️ Hit rate of {hit_rate:.1f}% is below expected. Model may need adjustment.")
             
-            # Show misses if any
+            # Calibration Report
+            st.write("---")
+            st.subheader("📊 Calibration Report")
+            
+            with st.expander("🔬 Advanced Calibration Analysis", expanded=False):
+              
+                calibration = calculate_calibration_metrics(df_valid)
+
+
+                
+                
+                st.write("**Volatility Regime Analysis:**")
+                if calibration['regime_analysis']:
+                    regime_data = []
+                    for regime, stats in calibration['regime_analysis'].items():
+                        regime_data.append({
+                            'Regime': regime,
+                            'Hit Rate': f"{stats['hit_rate']:.1f}%",
+                            'Tests': stats['count'],
+                            'Avg Miss Magnitude': f"{stats['avg_miss_magnitude']:.1f}%"
+                        })
+                    regime_df = pd.DataFrame(regime_data)
+                    st.dataframe(regime_df, use_container_width=True, hide_index=True)
+
+                    for regime, stats in calibration['regime_analysis'].items():
+                        if stats['hit_rate'] < 80:
+                            st.warning(f"⚠️ **{regime} Volatility:** Only {stats['hit_rate']:.1f}% hit rate. Model struggles in {regime.lower()} volatility conditions.")
+                        elif stats['hit_rate'] > 95:
+                            st.info(f"ℹ️ **{regime} Volatility:** {stats['hit_rate']:.1f}% hit rate may indicate overly conservative intervals.")
+                else:
+                    st.info("Enable volatility tracking to see regime-based analysis")
+                
+                st.write("---")
+                st.write("**Directional Accuracy:**")
+                directional = calculate_directional_accuracy(df_valid, num_days)
+                
+                dir_col1, dir_col2, dir_col3 = st.columns(3)
+                with dir_col1:
+                    st.metric("Overall Direction Accuracy", f"{directional['overall_accuracy']*100:.1f}%")
+                with dir_col2:
+                    st.metric("Upward Move Accuracy", f"{directional['upward_accuracy']*100:.1f}%")
+                with dir_col3:
+                    st.metric("Downward Move Accuracy", f"{directional['downward_accuracy']*100:.1f}%")
+                
+                if directional['overall_accuracy'] < 0.5:
+                    st.warning("⚠️ Directional accuracy below 50% suggests drift parameter may need adjustment")
+                
+                st.write("---")
+                st.write("**Failure Pattern Analysis:**")
+                failures = identify_failure_patterns(df_valid, threshold=0.15)
+                
+                fail_col1, fail_col2 = st.columns(2)
+                with fail_col1:
+                    st.metric("Major Failures (>15% miss)", failures['major_failures'])
+                    st.metric("Failure Rate", f"{failures['failure_rate']:.1f}%")
+                with fail_col2:
+                    st.metric("Total Misses", failures['total_misses'])
+                    st.metric("Avg Miss Magnitude", f"{failures['avg_miss_magnitude']*100:.1f}%")
+                
+                if failures['patterns']:
+                    st.write("**Detected Patterns:**")
+                    for pattern in failures['patterns']:
+                        st.write(f"- {pattern}")
+                
+                st.write("---")
+                st.write("**Worst Misses:**")
+                if calibration['worst_misses']:
+                    worst_df = pd.DataFrame(calibration['worst_misses'])
+                    if 'Test Date' in worst_df.columns:
+                        worst_df = worst_df[['Test Date', 'Actual Price', 'Lower Bound', 'Upper Bound', 'Miss Magnitude', 'Volatility']]
+                    worst_df['Actual Price'] = worst_df['Actual Price'].apply(lambda x: f"${x:.2f}")
+                    worst_df['Lower Bound'] = worst_df['Lower Bound'].apply(lambda x: f"${x:.2f}")
+                    worst_df['Upper Bound'] = worst_df['Upper Bound'].apply(lambda x: f"${x:.2f}")
+                    worst_df['Miss Magnitude'] = worst_df['Miss Magnitude'].apply(lambda x: f"{x:.1f}%")
+                    worst_df['Volatility'] = worst_df['Volatility'].apply(lambda x: f"{x:.1f}%")
+                    st.dataframe(worst_df.head(5), use_container_width=True, hide_index=True)
+
             if num_misses > 0:
                 st.write("---")
                 st.subheader("🔍 Sample Misses")
