@@ -188,8 +188,21 @@ if st.button("Run Backtest", type="primary"):
                 upper_bound_normal = metrics_normal['upper_bound']
                 lower_bound_student_t = metrics_student_t['lower_bound']
                 upper_bound_student_t = metrics_student_t['upper_bound']
+            else:
+                # Single distribution case
+                if distribution == "Normal":
+                    simulations = run_monte_carlo(
+                        stats['starting_price'], stats['mu'], stats['sigma'], num_days, 1000, distribution="Normal"
+                    )
+                else:  # Student-t (Fat Tails)
+                    simulations = run_monte_carlo(
+                        stats['starting_price'], stats['mu'], stats['sigma'], num_days, 1000, distribution="Student-t (Fat Tails)", df=df
+                    )
+                
+                metrics = calculate_metrics(simulations, stats['starting_price'], stats['mu'], stats['sigma'], num_days)
+                lower_bound = metrics['lower_bound']
+                upper_bound = metrics['upper_bound']
 
-<<<<<<< HEAD
             future_mask = full_data.index > test_date
             future_data = full_data[future_mask]
             
@@ -201,83 +214,6 @@ if st.button("Run Backtest", type="primary"):
                 # Not enough future data - skip this test
                 actual_price = None
                 actual_forecast_date = None
-=======
-            else:
-                simulations = run_monte_carlo(
-                    stats['starting_price'], stats['mu'], stats['sigma'], num_days, 1000, distribution=distribution, df=df
-                )
-                metrics = calculate_metrics(simulations, stats['starting_price'], stats['mu'], stats['sigma'], num_days)
-                lower_bound = metrics['lower_bound']
-                upper_bound = metrics['upper_bound']
-
-            # Get actual price from pre-downloaded data
-            # Slice future data starting from test_date
-            mask_future = full_data.index >= test_date
-            future_data = full_data[mask_future]
-            
-            actual_price = None
-            actual_forecast_date = None
-            
-            if not future_data.empty:
-                # We need the price at exactly num_days trading days AFTER test_date
-                # The first row of future_data is test_date (or next available).
-                # If test_date is in future_data, index 0 is test_date. index num_days is the target.
-                
-                # Check if test_date is present in the data
-                if future_data.index[0] == test_date:
-                    target_idx = num_days
-                else:
-                    # If test_date was a weekend/holiday, index 0 is the next trading day.
-                    # So index 0 is T+1 (effectively). We want T+num_days.
-                    # This is approximate. Let's use index based approach which is standard for trading days.
-                    target_idx = num_days - 1
-
-                if len(future_data) > target_idx:
-                     actual_price = float(future_data['Close'].iloc[target_idx])
-                     actual_forecast_date = future_data.index[target_idx]
-
-            # Store results
-            if distribution == "Compare Both":
-                if actual_price is not None:
-                    within_bounds_normal = (lower_bound_normal <= actual_price <= upper_bound_normal)
-                    within_bounds_student_t = (lower_bound_student_t <= actual_price <= upper_bound_student_t)
-                else:
-                    within_bounds_normal = False
-                    within_bounds_student_t = False
-
-                results.append({
-                    'Test Date': test_date.strftime('%Y-%m-%d'),
-                    'Forecast Date': actual_forecast_date.strftime('%Y-%m-%d') if actual_forecast_date else 'N/A',
-                    'Starting Price': stats['starting_price'],
-                    'Actual Price': actual_price,
-                    'mu': stats['mu'],
-                    'Lower Bound Normal': lower_bound_normal,
-                    'Upper Bound Normal': upper_bound_normal,
-                    'Lower Bound Student-t': lower_bound_student_t,
-                    'Upper Bound Student-t': upper_bound_student_t,
-                    'Within Bounds Normal': within_bounds_normal,
-                    'Within Bounds Student-t': within_bounds_student_t,
-                    'Volatility': stats['sigma'] * np.sqrt(252) * 100,
-                    'Distribution': 'Both'
-                })
-            else:
-                if actual_price is not None:
-                    within_bounds = (lower_bound <= actual_price <= upper_bound)
-                else:
-                    within_bounds = False
-
-                results.append({
-                    'Test Date': test_date.strftime('%Y-%m-%d'),
-                    'Forecast Date': actual_forecast_date.strftime('%Y-%m-%d') if actual_forecast_date else 'N/A',
-                    'Starting Price': stats['starting_price'],
-                    'Actual Price': actual_price,
-                    'Lower Bound': lower_bound,
-                    'Upper Bound': upper_bound,
-                    'Within Bounds': within_bounds,
-                    'Volatility': stats['sigma'] * np.sqrt(252) * 100,
-                    'Distribution': distribution
-                })
->>>>>>> 8e37d8450acc72e0e641c5e167bbb5b0f41961d3
 
             # Store results
             if distribution == "Compare Both":
