@@ -250,3 +250,87 @@ def identify_failure_patterns(df_results: pd.DataFrame,
         'failure_rate': len(major_failures) / len(df_results) * 100 if len(df_results) > 0 else 0,
         'avg_miss_magnitude': misses['Miss Magnitude'].mean() if len(misses) > 0 else 0
     }
+
+def calculate_rolling_coverage(
+    df_results: pd.DataFrame, window_fraction=0.3, min_window_size=5
+) -> Dict:
+    """
+    Calculate rolling CI coverage to detect calibration drift over time.
+
+    A stable model should maintain ~90% coverage across all windows.
+    Large drops indicate periods where the model's assumptions broke down
+    (e.g., regime changes, volatility spikes).
+
+    Args:
+    df_results: DataFrame with 'Within Bounds', 'Actual Price', and 'Test Date'
+    window_fraction: Fraction of total tests for window size (default 0.3)
+    min_window_size: Minimum window size floor (default 5)
+    s
+    Returns:
+        dict with rolling coverage series, summary stats, worst/best
+        periods
+    """
+    df= df_results[df_results['Actual Price'].notna()].copy()
+
+    window_size = max(min_window_size, int(len(df) * window_fraction))
+
+    if len(df) < window_size:
+        return{
+            "rolling_coverage": pd.Series(dtype = float),
+            "dates": pd.Series(dtype = str),
+            "mean_coverage": 0.0,
+            "std_coverage": 0.0,
+            "min_coverage": 0.0,
+            "max_coverage": 0.0,
+            "worst_period": None,
+            "best_period": None,
+            "window_size": window_size,
+            "sufficient_data": False 
+        }
+    df = df.sort_values('Test Date').reset_index(drop = True)
+
+    rolling_hits = (
+        df['Within Bounds']
+        .rolling(window=window_size, min_periods=window_size)
+        .mean()
+        * 100
+    )
+
+    valid_rolling = rolling_hits.dropna()
+
+    if len(valid_rolling) == 0:
+        return{
+            "rolling_coverage": pd.Series(dtype = float),
+            "dates": df['Test Date'],
+            "mean_coverage": 0.0,
+            "std_coverage": 0.0,
+            "min_coverage": 0.0,
+            "max_coverage": 0.0,
+            "worst_period": None,
+            "best_period": None,
+            "window_size": window_size,
+            "sufficient_data": False
+
+        }
+    worst_idx = valid_rolling.idxmin()
+    best_idx = valid_rolling.idxmax()
+
+    def _period_info(idx):
+        start_i = max(0, idx - window_size + 1)
+        return {
+            "start_date": df.iloc[start_i]['Test Date'],
+            "end_date": df.iloc[idx]['Test Date'],
+            "coverage": float(valid_rolling.loc[idx])
+        }
+    return {
+        "rolling_coverage": valid_rolling,
+        "dates": df['Test Date'],
+        "mean_coverage": float(valid_rolling.mean()),
+        "std_coverage": float(valid_rolling.std()),
+        "min_coverage": float(valid_rolling.min()),
+        "max_coverage": float(valid_rolling.max()),
+        "worst_period": _period_info(worst_idx),
+        "best_period": _period_info(best_idx),
+        "window_size": window_size,
+        "sufficient_data": True
+    }

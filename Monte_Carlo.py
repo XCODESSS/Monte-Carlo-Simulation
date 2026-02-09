@@ -165,18 +165,17 @@ def download_stock_data(ticker, start_date, end_date, api_key=None):
 
     # Validate
     if data.empty:
-        # Return empty for UI to handle
+
         return data
 
-    # Ensure 'Close' column exists (should for yfinance)
     if 'Close' not in data.columns:
-        # Check for lowercase
+
         if 'close' in data.columns:
             data.rename(columns={'close': 'Close'}, inplace=True)
         else:
             raise ValueError(f"Downloaded data for {ticker} is missing 'Close' price column.")
 
-    # Drop missing Close prices
+
     if data['Close'].isnull().any():
         data.dropna(subset=['Close'], inplace=True)
 
@@ -259,7 +258,6 @@ def run_monte_carlo(starting_price, mu, sigma, num_days, num_simulations, distri
     if num_days <= 0 or num_simulations <= 0:
         raise ValueError("num_days and num_simulations must be positive")
 
-    # Delegate to Student-t function if requested
     if distribution == "Student-t (Fat Tails)":
         return run_monte_carlo_student_t(starting_price, mu, sigma, num_days, num_simulations, df=df)
     
@@ -401,7 +399,6 @@ def plot_simulation(simulations, metrics, starting_price, sigma, ticker, num_day
     RISK_RED = '#FF3333'
     SILVER = '#d9d9d9'   
 
-    # Figure & Grid
     fig = plt.figure(figsize=(16, 9), facecolor=BG_COLOR, dpi=120)
     gs = gridspec.GridSpec(
         1, 4,
@@ -419,7 +416,7 @@ def plot_simulation(simulations, metrics, starting_price, sigma, ticker, num_day
     for i in range(num_paths_to_plot):
         ax1.plot(
             days_array,
-            simulations[: num_paths_to_plot].T,
+            simulations[i],
             color=SILVER,
             alpha=0.03,
             linewidth=0.7,
@@ -479,9 +476,6 @@ def plot_simulation(simulations, metrics, starting_price, sigma, ticker, num_day
     ax2.axhline(y=metrics['mean_final_price'], color=TEXT_COLOR, linewidth=1.5)
     ax2.axhline(y=metrics['lower_bound'], color=RISK_RED, linestyle=':', linewidth=1.5)
     ax2.axhline(y=metrics['upper_bound'], color=AMBER, linestyle=':', linewidth=1.5)
-
-    # --- STATUS BAR ---
-    # Removed for compatibility
 
     # --- STYLING ---
     for ax in [ax1, ax2]:
@@ -555,7 +549,7 @@ def main():
     timeframe = '1_year'  # Change this to any key from TIMEFRAMES
     num_simulations = 1000
     
-    # Get number of days from timeframe
+
     num_days = TIMEFRAMES[timeframe]
     
     print(f"Downloading data for {ticker}...")
@@ -582,10 +576,9 @@ def main():
         num_days
     )
     
-    # Display results
+
     print_results(ticker, metrics, num_days)
-    
-    # Visualize
+
     plot_simulation(
         simulations,
         metrics,
@@ -597,6 +590,5 @@ def main():
     )
 
 
-# Run the simulation
 if __name__ == "__main__":
     main()

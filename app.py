@@ -7,7 +7,6 @@ from Monte_Carlo import *
 from datetime import datetime, timedelta
 import os
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def cached_download_stock_data(ticker, start_date, end_date):
     """Cached wrapper for download_stock_data"""
     return download_stock_data(ticker, start_date, end_date)
@@ -34,9 +33,7 @@ with st.sidebar:
     st.header("Configuration")
     
     ticker = st.text_input("Stock Ticker", value="AAPL")
-       # API Key for Indian Stocks
     alpha_vantage_key = None
-    # Check secrets or env vars
     try:
         if "ALPHA_VANTAGE_KEY" in st.secrets:
             alpha_vantage_key = st.secrets["ALPHA_VANTAGE_KEY"]
@@ -45,8 +42,7 @@ with st.sidebar:
     
     if not alpha_vantage_key and "ALPHA_VANTAGE_KEY" in os.environ:
         alpha_vantage_key = os.environ["ALPHA_VANTAGE_KEY"]
-        
-    # If ticker suggests Indian stock and key not found automatically, ask user
+
     if ticker.endswith('.NS') and not alpha_vantage_key:
         alpha_vantage_key = st.text_input("Alpha Vantage API Key", type="password", help="Required for Indian stocks (.NS)")
         if not alpha_vantage_key:
@@ -104,6 +100,7 @@ with st.sidebar:
         else:
             df = None
     
+  
     # Simulations
     st.subheader("🔢 Simulations")
     num_simulations = st.slider(
@@ -117,9 +114,8 @@ with st.sidebar:
     st.divider()
     run_button = st.button("🚀 Run Simulation", type="primary", use_container_width=True)
 
-# Main area for results
 if run_button:
-    # Download data
+
     with st.spinner("Downloading stock data..."):
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365 * 10)
@@ -140,6 +136,8 @@ if run_button:
             st.info("💡 Tip: Use a valid stock ticker (e.g., AAPL, MSFT, GOOGL)")
             st.stop()
     
+   
+   
     # Calculate statistics
     with st.spinner("Calculating statistics..."):
         stats = calculate_statistics(data)
@@ -162,8 +160,7 @@ if run_button:
                 num_simulations,
                 df=df
             )
-        
-        # Calculate metrics for both
+
         metrics_normal = calculate_metrics(
             simulations_normal, 
             stats['starting_price'], 
@@ -178,8 +175,7 @@ if run_button:
             stats['sigma'], 
             num_days
         )
-        
-        # Use normal for display (will show comparison)
+
         simulations = simulations_normal
         metrics = metrics_normal
     else:
@@ -193,7 +189,7 @@ if run_button:
                     num_simulations
                 )
             else:
-                # Use the dedicated Student-t function for better consistency
+
                 simulations = run_monte_carlo_student_t(
                     stats["starting_price"],
                     stats["mu"],
@@ -203,7 +199,6 @@ if run_button:
                     df=df
                 )
 
-        # Calculate metrics
         metrics = calculate_metrics(
             simulations, 
             stats['starting_price'], 
@@ -212,16 +207,17 @@ if run_button:
             num_days
         )
     
+    
+    
     # Display results
     st.subheader("Simulation Results")
-    # Ensure timeframe_label is defined
+
     if use_custom_days:
         timeframe_label = f"{num_days} days"
     else:
         timeframe_label = timeframe.replace('_', ' ')
     st.write(f"**Ticker:** {ticker} | **Period:** {timeframe_label} | **Distribution:** {distribution}")
     
-    # Key metrics
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
@@ -251,7 +247,6 @@ if run_button:
             f"{metrics['prob_profit']:.1f}%"
         )
     
-    # Additional metrics
     st.divider()
     col_a, col_b = st.columns(2)
     
@@ -265,6 +260,7 @@ if run_button:
             st.write(f"📈 **Average Gain:** {metrics['avg_gain']*100:.2f}%")
         st.write(f"**Probability of Profit:** {metrics['prob_profit']:.1f}%")
     
+    
     # Risk-adjusted performance
     st.divider()
     st.subheader("Risk-Adjusted Performance")
@@ -277,9 +273,10 @@ if run_button:
     else:
         st.warning("Low risk-adjusted returns")
     
+    
+    
     # Visualization
     if distribution == "Both":
-        # Ensure variables are defined (defensive check)
         try:
             _ = simulations_normal
             _ = simulations_student_t
@@ -289,19 +286,16 @@ if run_button:
             st.error(f"❌ Error: Comparison variables not properly initialized. Please try running the simulation again.")
             st.error(f"Details: {str(e)}")
             st.stop()
-        
-        # Use columns for side-by-side path plots
+
         col1, col2 = st.columns(2)
         
         days_array = np.arange(1, num_days + 1)
         num_paths = min(200, len(simulations_normal))
-        
-        # Normal Distribution Plot
+
         with col1:
             fig1 = plt.figure(figsize=(8, 6), facecolor='#0e1117', dpi=100)
             ax1 = fig1.add_subplot(111)
-            
-            # Faint cloud of paths (very low alpha for clarity)
+
             for i in range(num_paths):
                 ax1.plot(days_array, simulations_normal[: num_paths].T, color='#4A90E2', alpha=0.05, linewidth=0.5, zorder=1)
             

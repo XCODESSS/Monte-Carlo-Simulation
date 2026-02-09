@@ -13,10 +13,9 @@ from Calibration import (
     identify_failure_patterns
 )
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def cached_download_stock_data(ticker, start_date, end_date, api_key=None):
+def cached_download_stock_data(ticker, start_date, end_date):
     """Cached wrapper for download_stock_data"""
-    return download_stock_data(ticker, start_date, end_date, api_key=api_key)
+    return download_stock_data(ticker, start_date, end_date)
 
 plt.rcParams['figure.facecolor'] = '#0e1117'
 plt.rcParams['axes.facecolor'] = '#0e1117'
@@ -119,27 +118,17 @@ if st.button("Run Backtest", type="primary"):
 
     end_date = pd.Timestamp(backtest_end)
     start_date_str = historical_start.strftime('%Y-%m-%d')
+    end_date_str = backtest_end.strftime('%Y-%m-%d')
     
     test_dates = pd.date_range(end=end_date, periods=num_backtests, freq='ME')
     test_dates = test_dates.sort_values()
 
-    # Calculate required end date for data download (including forecast period)
-    # Add buffer for trading days vs calendar days
-    calendar_days_buffer = int(num_days * 1.6) + 30
-    max_forecast_date = test_dates.max() + pd.Timedelta(days=calendar_days_buffer)
-    # Ensure we don't request future data beyond today
-    download_end_date = max(max_forecast_date, pd.Timestamp.now())
-    download_end_str = download_end_date.strftime('%Y-%m-%d')
-
-    # Single Data Download for the entire period
+    # Validation check
     try:
-        with st.spinner(f"Downloading historical data for {ticker}..."):
-            full_data = cached_download_stock_data(ticker, start_date_str, download_end_str, api_key=alpha_vantage_key)
-
-        if full_data.empty:
+        test_data = cached_download_stock_data(ticker, start_date_str, end_date_str)
+        if test_data.empty:
             st.error(f"❌ No data found for ticker '{ticker}'. Please check the symbol.")
             st.stop()
-
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
         st.info("💡 Tip: Make sure you're using a valid stock ticker")
@@ -148,18 +137,20 @@ if st.button("Run Backtest", type="primary"):
     results = []
     progress_bar = st.progress(0)
     status_text = st.empty()
+
+    full_data = cached_download_stock_data(ticker, start_date_str, end_date_str)
     
     for i, test_date in enumerate(test_dates):
         status_text.text(f"Running backtest {i+1}/{num_backtests}...")
         progress_bar.progress((i + 1) / num_backtests)
-
-        # Slicing data from memory
-        mask_train = full_data.index <= test_date
-        data = full_data[mask_train].copy()
+        mask = full_data.index <= test_date
+        data = full_data[mask].copy()
         
         try:
+            
             if len(data) < 30:
                 continue
+            
             
             if use_rolling_window and lookback_days:
                 if len(data) > lookback_days:
@@ -172,36 +163,81 @@ if st.button("Run Backtest", type="primary"):
             # Calculate statistics
             stats = calculate_statistics(stats_data)
             
-            # Run Simulations (Refactored to assume clean API in Monte_Carlo)
-            if distribution == "Compare Both":
-                simulations_normal = run_monte_carlo(
-                    stats['starting_price'], stats['mu'], stats['sigma'], num_days, 1000, distribution="Normal"
+            
+            if distribution == "Normal":
+                simulations = run_monte_carlo(
+                    stats['starting_price'], 
+                    stats['mu'], 
+                    stats['sigma'], 
+                    num_days, 
+                    1000
                 )
-                simulations_student_t = run_monte_carlo(
-                    stats['starting_price'], stats['mu'], stats['sigma'], num_days, 1000, distribution="Student-t (Fat Tails)", df=df
+                metrics = calculate_metrics(
+                    simulations, 
+                    stats['starting_price'], 
+                    stats['mu'], 
+                    stats['sigma'], 
+                    num_days
+                )
+                lower_bound = metrics['lower_bound']
+                upper_bound = metrics['upper_bound']
+                
+            elif distribution == "Student-t (Fat Tails)":
+                simulations = run_monte_carlo_student_t(
+                    stats['starting_price'], 
+                    stats['mu'], 
+                    stats['sigma'], 
+                    num_days, 
+                    1000,
+                    df=df
+                )
+                metrics = calculate_metrics(
+                    simulations, 
+                    stats['starting_price'], 
+                    stats['mu'], 
+                    stats['sigma'], 
+                    num_days
+                )
+                lower_bound = metrics['lower_bound']
+                upper_bound = metrics['upper_bound']
+                
+            else:  
+                
+                simulations_normal = run_monte_carlo(
+                    stats['starting_price'], 
+                    stats['mu'], 
+                    stats['sigma'], 
+                    num_days, 
+                    1000
+                )
+                simulations_student_t = run_monte_carlo_student_t(
+                    stats['starting_price'], 
+                    stats['mu'], 
+                    stats['sigma'], 
+                    num_days, 
+                    1000,
+                    df=df
                 )
                 
-                metrics_normal = calculate_metrics(simulations_normal, stats['starting_price'], stats['mu'], stats['sigma'], num_days)
-                metrics_student_t = calculate_metrics(simulations_student_t, stats['starting_price'], stats['mu'], stats['sigma'], num_days)
+                metrics_normal = calculate_metrics(
+                    simulations_normal, 
+                    stats['starting_price'], 
+                    stats['mu'], 
+                    stats['sigma'], 
+                    num_days
+                )
+                metrics_student_t = calculate_metrics(
+                    simulations_student_t, 
+                    stats['starting_price'], 
+                    stats['mu'], 
+                    stats['sigma'], 
+                    num_days
+                )
                 
                 lower_bound_normal = metrics_normal['lower_bound']
                 upper_bound_normal = metrics_normal['upper_bound']
                 lower_bound_student_t = metrics_student_t['lower_bound']
                 upper_bound_student_t = metrics_student_t['upper_bound']
-            else:
-                # Single distribution case
-                if distribution == "Normal":
-                    simulations = run_monte_carlo(
-                        stats['starting_price'], stats['mu'], stats['sigma'], num_days, 1000, distribution="Normal"
-                    )
-                else:  # Student-t (Fat Tails)
-                    simulations = run_monte_carlo(
-                        stats['starting_price'], stats['mu'], stats['sigma'], num_days, 1000, distribution="Student-t (Fat Tails)", df=df
-                    )
-                
-                metrics = calculate_metrics(simulations, stats['starting_price'], stats['mu'], stats['sigma'], num_days)
-                lower_bound = metrics['lower_bound']
-                upper_bound = metrics['upper_bound']
 
             future_mask = full_data.index > test_date
             future_data = full_data[future_mask]
