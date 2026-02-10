@@ -266,17 +266,15 @@ def run_monte_carlo(starting_price, mu, sigma, num_days, num_simulations, distri
     random_shocks = np.random.normal(0, 1, (num_simulations, num_days))
     
     # Formula: S(t) = S(0) * exp(sum of increments from 0 to t)
-    drift = mu * dt
+    drift = (mu - 0.5 * sigma**2) * dt
     diffusion = sigma * np.sqrt(dt) * random_shocks
     
 
     increments = drift + diffusion
     cumulative_increments = np.cumsum(increments, axis=1)
-    
-
-    price_paths = starting_price * np.exp(cumulative_increments)
-    
+    price_paths = np.empty((num_simulations, num_days + 1))
     price_paths[:, 0] = starting_price
+    price_paths[:, 1:] = starting_price * np.exp(cumulative_increments)
 
     return price_paths
 
@@ -309,15 +307,14 @@ def run_monte_carlo_student_t(
     shocks = shocks / np.sqrt(df / (df - 2))
 
 
-    drift = mu * dt
+    drift = (mu - 0.5 * sigma**2) * dt
     diffusion = sigma * np.sqrt(dt) * shocks
 
     increments = drift + diffusion
     cumulative_increments = np.cumsum(increments, axis=1)
-    
-    price_paths = starting_price * np.exp(cumulative_increments)
-    
+    price_paths = np.empty((num_simulations, num_days + 1))
     price_paths[:, 0] = starting_price
+    price_paths[:, 1:] = starting_price * np.exp(cumulative_increments)
 
     return price_paths
 
@@ -333,6 +330,7 @@ def calculate_metrics(
     mu: float,
     sigma: float,
     num_days: int,
+    risk_free_rate: float = 0.05
 ) -> dict:
     """
     Calculate all risk metrics from simulation results
@@ -347,23 +345,20 @@ def calculate_metrics(
     upper_bound = np.percentile(final_prices, 95)
     
 
-    var_95_loss = max(0, starting_price - lower_bound)
-    var_99_loss = max(0, starting_price - np.percentile(final_prices, 1))
+    var_95_loss = starting_price - lower_bound
+    var_99_loss = starting_price - np.percentile(final_prices, 1)
     
 
+    log_total_return = np.log(mean_final_price / starting_price)
+    annual_log_return = log_total_return * (252 / num_days)
     annual_volatility = sigma * np.sqrt(252)
-
-
-    total_return = (mean_final_price - starting_price) / starting_price
-    annual_return_post = total_return * (252 / num_days)
     sharpe_ratio_post = (
-        annual_return_post / annual_volatility if annual_volatility != 0 else 0.0
+        (annual_log_return - risk_free_rate) / annual_volatility
+        if annual_volatility != 0 else 0.0
     )
 
-
-    sharpe_ratio_ante = mu / sigma if sigma != 0 else 0.0
-
-    
+    daily_rf = risk_free_rate / 252
+    sharpe_ratio_ante = (mu - daily_rf) / sigma * np.sqrt(252) if sigma != 0 else 0.0
 
     prob_profit = (final_prices > starting_price).mean() * 100
     prob_loss = (final_prices < starting_price).mean() * 100
