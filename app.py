@@ -3,7 +3,7 @@ Monte Carlo Stock Price Simulator - Streamlit App
 Main interface for running single or comparative Monte Carlo simulations.
 """
 
-# ── Imports ──────────────────────────────────────────────────────────
+# ── Imports
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
@@ -22,13 +22,13 @@ from Monte_Carlo import (
 )
 
 
-# ── Cached Data Loader ──────────────────────────────────────────────
+# ── Cached Data Loader 
 def cached_download_stock_data(ticker, start_date, end_date):
     """Cached wrapper for download_stock_data"""
     return download_stock_data(ticker, start_date, end_date)
 
 
-# ── Page Config & Global Styles ─────────────────────────────────────
+# ── Page Config & Global Styles 
 st.set_page_config(layout="wide", page_title="Monte Carlo Stock Simulator")
 
 plt.rcParams.update(
@@ -49,7 +49,7 @@ sns.set_style(
     {"axes.facecolor": "#0e1117", "figure.facecolor": "#0e1117"},
 )
 
-# ── Chart Style Constants ───────────────────────────────────────────
+# ── Chart Style Constants 
 BLUE = "#4A90E2"
 RED = "#E74C3C"
 GOLD = "#FFD700"
@@ -58,7 +58,7 @@ GRID = "#2d2d2d"
 PANEL_BG = "#1e1e1e"
 
 
-# ── Helper: style a matplotlib axis for dark theme ──────────────────
+# ── Helper: style a matplotlib axis for dark theme
 def style_axis(ax):
     """Apply consistent dark-theme styling to a matplotlib axis."""
     ax.set_facecolor(BG)
@@ -69,7 +69,7 @@ def style_axis(ax):
     ax.spines["bottom"].set_color(GRID)
 
 
-# ── Helper: build a single-model price-path chart ───────────────────
+# ── Helper: build a single-model price-path chart
 def plot_price_paths(ax, days_array, simulations, color, title, starting_price):
     """Plot simulation paths, percentile bands, and median on an axis."""
     num_paths = min(200, len(simulations))
@@ -115,15 +115,13 @@ def plot_price_paths(ax, days_array, simulations, color, title, starting_price):
     style_axis(ax)
 
 
-# ════════════════════════════════════════════════════════════════════
 #  SIDEBAR – User Configuration
-# ════════════════════════════════════════════════════════════════════
 st.title("Monte Carlo Stock Price Simulator")
 
 with st.sidebar:
     st.header("Configuration")
 
-    # ── Ticker & API Key ────────────────────────────────────────────
+    # ── Ticker & API Key
     ticker = st.text_input("Stock Ticker", value="AAPL")
 
     alpha_vantage_key = None
@@ -143,7 +141,7 @@ with st.sidebar:
         if not alpha_vantage_key:
             st.warning("⚠️ Alpha Vantage API key required for Indian stocks.")
 
-    # ── Forecast Period ─────────────────────────────────────────────
+    # ── Forecast Period
     st.subheader("📅 Forecast Period")
     use_custom_days = st.checkbox("Use custom number of days")
 
@@ -159,7 +157,7 @@ with st.sidebar:
         num_days = TIMEFRAMES[timeframe]
         timeframe_label = timeframe.replace("_", " ")
 
-    # ── Distribution Model ──────────────────────────────────────────
+    # ── Distribution Model
     st.subheader("📊 Distribution Model")
     compare_models = st.checkbox(
         "🔀 Compare Normal vs Student-t Models",
@@ -190,7 +188,7 @@ with st.sidebar:
                 help="Lower values = fatter tails",
             )
 
-    # ── Simulation Count ────────────────────────────────────────────
+    # ── Simulation Count
     st.subheader("🔢 Simulations")
     num_simulations = st.slider(
         "Number of Simulations",
@@ -206,12 +204,10 @@ with st.sidebar:
     )
 
 
-# ════════════════════════════════════════════════════════════════════
 #  MAIN PANEL – Simulation Execution & Results
-# ════════════════════════════════════════════════════════════════════
 if run_button:
 
-    # ── 1. Download Data ────────────────────────────────────────────
+    # ── 1. Download Data
     with st.spinner("Downloading stock data..."):
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365 * 10)
@@ -231,11 +227,11 @@ if run_button:
             )
             st.stop()
 
-    # ── 2. Calculate Statistics ─────────────────────────────────────
+    # ── 2. Calculate Statistics
     with st.spinner("Calculating statistics..."):
         stats = calculate_statistics(data)
 
-    # ── 3. Run Simulations ──────────────────────────────────────────
+    # ── 3. Run Simulations
     if distribution == "Both":
         with st.spinner(
             f"Running {num_simulations} simulations for both models..."
@@ -299,7 +295,7 @@ if run_button:
             num_days,
         )
 
-    # ── 4. Top-Level Metrics ────────────────────────────────────────
+    # ── 4. Top-Level Metrics
     st.subheader("Simulation Results")
     st.write(
         f"**Ticker:** {ticker} | **Period:** {timeframe_label} "
@@ -326,7 +322,7 @@ if run_button:
     with col4:
         st.metric("Probability of Profit", f"{metrics['prob_profit']:.1f}%")
 
-    # ── 5. Gain / Loss Summary ──────────────────────────────────────
+    # ── 5. Gain / Loss Summary
     st.divider()
     col_a, col_b = st.columns(2)
     with col_a:
@@ -340,7 +336,7 @@ if run_button:
             f"**Probability of Profit:** {metrics['prob_profit']:.1f}%"
         )
 
-    # ── 6. Sharpe Ratio ─────────────────────────────────────────────
+    # ── 6. Sharpe Ratio
     st.divider()
     st.subheader("Risk-Adjusted Performance")
     st.write(f"**Sharpe Ratio:** {metrics['sharpe_ratio_post']:.2f}")
@@ -352,9 +348,9 @@ if run_button:
     else:
         st.warning("Low risk-adjusted returns")
 
-    # ── 7. Visualization ────────────────────────────────────────────
+    # ── 7. Visualization
     if distribution == "Both":
-        # -- Side-by-side price path charts --
+        # Side-by-side price path charts
         days_array = np.arange(1, num_days + 1)
 
         col1, col2 = st.columns(2)

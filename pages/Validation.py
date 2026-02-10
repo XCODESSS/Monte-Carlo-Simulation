@@ -388,7 +388,7 @@ with col1:
 
     timeframe = st.selectbox("Forecast Timeframe", list(TIMEFRAMES.keys()))
     num_backtests = st.slider(
-        "Number of Backtests", min_value=10, max_value=100, value=30, step=5
+        "Number of Backtests", min_value=30, max_value=500, value=100, step=10
     )
 
     st.write("---")
@@ -451,7 +451,7 @@ if st.button("Run Backtest", type="primary"):
     end_date_str = backtest_end.strftime("%Y-%m-%d")
 
     test_dates = pd.date_range(
-        end=end_date, periods=num_backtests, freq="ME"
+        end=end_date, periods=num_backtests, freq="2W"
     ).sort_values()
 
     # --- Validate ticker ---

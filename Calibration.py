@@ -334,3 +334,45 @@ def calculate_rolling_coverage(
         "window_size": window_size,
         "sufficient_data": True
     }
+
+def christoffersen_test(violations: np.ndarray) -> dict:
+    """
+    Christoffersen's conditional coverage test.
+    Tests both unconditional coverage AND independence of violations.
+    
+    Args:
+        violations: boolean array where True = CI miss
+    
+    Returns:
+        dict with test statistic and p-value
+    """
+    from scipy.stats import chi2
+    
+    n = len(violations)
+    v = violations.astype(int)
+    
+    n00 = np.sum((v[:-1] == 0) & (v[1:] == 0))
+    n01 = np.sum((v[:-1] == 0) & (v[1:] == 1))
+    n10 = np.sum((v[:-1] == 1) & (v[1:] == 0))
+    n11 = np.sum((v[:-1] == 1) & (v[1:] == 1))
+
+    p01 = n01 / (n00 + n01) if (n00 + n01) > 0 else 0
+    p11 = n11 / (n10 + n11) if (n10 + n11) > 0 else 0
+    p = (n01 + n11) / (n - 1) if n > 1 else 0
+
+    if p01 == 0 or p11 == 0 or p == 0 or p01 == 1 or p11 == 1 or p == 1:
+        return {'statistic': 0.0, 'p_value': 1.0, 'independent': True}
+    
+    lr_ind = -2 * (
+        (n00 + n10) * np.log(1 - p) + (n01 + n11) * np.log(p)
+        - n00 * np.log(1 - p01) - n01 * np.log(p01)
+        - n10 * np.log(1 - p11) - n11 * np.log(p11)
+    )
+    
+    p_value = 1 - chi2.cdf(lr_ind, 1)
+    
+    return {
+        'statistic': float(lr_ind),
+        'p_value': float(p_value),
+        'independent': p_value > 0.05
+    }
